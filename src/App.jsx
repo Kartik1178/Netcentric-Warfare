@@ -1,15 +1,19 @@
 import { useState } from 'react'
 import LandingPage from './LandingPage'
 import { Simulation } from './Simulation'
+import { Router,Route, Routes } from 'react-router-dom'
 import './App.css'
 
 function App() {
-  const [count, setCount] = useState(0)
 
   return (
     <>
-    <LandingPage/> 
-    <Simulation/>
+ 
+      <Routes>
+   <Route path="/" element={<LandingPage/>}/> 
+    <Route path="/simulation" element={<Simulation/>}/>
+    </Routes>
+  
     </>
   )
 }

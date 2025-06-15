@@ -1,6 +1,8 @@
 
 import GridCanvas from "./MapSimulatuion/GridCanvas";
- export function Simulation() {
+import { useState } from "react"; 
+import { useEffect } from "react";
+export function Simulation() {
     const [objects, setObjects] = useState([]);
     const [logs, setLogs] = useState([]);
   
