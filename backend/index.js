@@ -16,7 +16,7 @@ io.on("connection", (socket) => {
  socket.on("unit-signal",(data)=>{
     const {source,type,payload}=data;
     console.log(`${source} sent signal :${type}`,payload)
-   socket.broadcast.emit("unit-signal", data);
+   io.emit("unit-signal", data);
   })
 
   socket.on("disconnect", () => {
