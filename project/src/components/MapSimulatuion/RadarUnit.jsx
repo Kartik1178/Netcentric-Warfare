@@ -3,46 +3,77 @@ import { Image, Group, Circle } from "react-konva";
 import useImage from "use-image";
 
 import socket from "../socket";
+
 export default function Radar({ x, y, radius = 20, objects }) {
   const [image] = useImage("/satellite-dish.png");
-  const detectedMissiles = useRef(new Set()); 
+  const detectedMissiles = useRef(new Set());
+  const latestObjects = useRef(objects);
+
+
+  useEffect(() => {
+    latestObjects.current = objects;
+  }, [objects]);
 
   useEffect(() => {
     const detectionRadius = 150;
 
     const detectMissiles = () => {
-      const threats = objects.filter((obj) => {
+      const currentObjects = latestObjects.current;
+
+      const threats = currentObjects.filter((obj) => {
         if (obj.type !== "missile") return false;
 
         const dx = obj.x - x;
         const dy = obj.y - y;
-        return Math.sqrt(dx * dx + dy * dy) <= detectionRadius;
+        const distance = Math.sqrt(dx * dx + dy * dy);
+
+        console.log(
+          `Checking missile ${obj.id} at (${obj.x}, ${obj.y}) → distance: ${distance.toFixed(
+            2
+          )}`
+        );
+
+        return distance <= detectionRadius;
       });
 
       threats.forEach((missile) => {
         if (!detectedMissiles.current.has(missile.id)) {
-          console.log(" Radar detected missile:", missile);
+          console.log("✅ Radar detected missile:", missile);
           socket.emit("unit-signal", {
             source: "radar",
             type: "relay-to-antenna",
+            from: { x, y },
+  to: { x: 420, y: 325 },
             payload: {
               id: missile.id,
               x: missile.x,
               y: missile.y,
             },
           });
-          detectedMissiles.current.add(missile.id); // ✅ avoid re-detecting same missile
+          detectedMissiles.current.add(missile.id);
         }
       });
     };
 
-    const interval = setInterval(detectMissiles, 1000); // check every second
+    const interval = setInterval(detectMissiles, 1000);
     return () => clearInterval(interval);
-  }, [x, y, objects]);
+  }, [x, y]); // ❌ DO NOT include `objects` here
 
   return (
     <Group x={x} y={y}>
-      <Circle radius={radius} fill="green" shadowBlur={4} shadowColor="black" />
+      <Circle
+        radius={radius}
+        fill="green"
+        shadowBlur={4}
+        shadowColor="black"
+      />
+      {/* Optional: show detection zone for testing */}
+      <Circle
+        radius={150}
+        stroke="rgba(0,255,0,0.3)"
+        strokeWidth={2}
+        dash={[10, 5]}
+      />
       {image && (
         <Image
           image={image}

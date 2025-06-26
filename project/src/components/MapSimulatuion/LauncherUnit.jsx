@@ -8,27 +8,36 @@ export default function Launcher({ x, y, radius = 20 }) {
   const [image] = useImage("/launcher.png");
   const [targets, setTargets] = useState([]);
 useEffect(() => {
-    socket.on("unit-signal", (data) => {
-      const { source, type, payload } = data;
+  const handleSignal = (data) => {
+    const { source, type, payload } = data;
 
-      if (source === "antenna" && type === "threat-detected") {
-        console.log("Launcher received threat from antenna", payload);
-          setTargets((prev) => [...prev, payload]);
-      }
-    });
+    if (source === "antenna" && type === "threat-detected") {
+      console.log("Launcher received threat from antenna", payload);
+      setTargets((prev) => [...prev, payload]);
+        socket.emit("unit-signal", {
+        source: "launcher",
+        type: "engage-target",
+        payload: payload, 
+      });
+    }
+  };
 
-    return () => socket.off("unit-signal");
-  }, []);
+  socket.on("unit-signal", handleSignal);
+
+  return () => {
+    socket.off("unit-signal", handleSignal);
+  };
+}, []);
   return (
     <Group x={x} y={y}>
-      {/* Circular background */}
+   
       <Circle
         radius={radius}
-        fill="green" // Dodger blue for better contrast
+        fill="green" 
         shadowBlur={4}
         shadowColor="black"
       />
-      {/* Missile Image masked to fit circle dimensions */}
+
       {image && (
         <Image
           image={image}

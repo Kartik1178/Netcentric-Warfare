@@ -1,5 +1,5 @@
 import React, { useEffect, useRef } from 'react';
-import { Terminal, Trash2, Download, Activity, CheckCircle, XCircle, AlertCircle } from 'lucide-react';
+import { Terminal, Trash2, Download, Activity, CheckCircle, AlertCircle } from 'lucide-react';
 
 export const SimulationLog = ({ logs, onClearLogs }) => {
   const logContainerRef = useRef(null);
@@ -10,12 +10,13 @@ export const SimulationLog = ({ logs, onClearLogs }) => {
     }
   }, [logs]);
 
-  const getPriorityColor = (priority) => {
-    switch (priority) {
-      case 'critical': return 'text-red-400 border-red-400/30 bg-red-400/5';
-      case 'high': return 'text-amber-400 border-amber-400/30 bg-amber-400/5';
-      case 'medium': return 'text-blue-400 border-blue-400/30 bg-blue-400/5';
-      case 'low': return 'text-slate-400 border-slate-600/30 bg-slate-400/5';
+  const getPriorityColor = (type) => {
+    switch (type) {
+      case 'detection': return 'text-red-400 border-red-400/30 bg-red-400/5';
+      case 'analysis': return 'text-amber-400 border-amber-400/30 bg-amber-400/5';
+      case 'response': return 'text-blue-400 border-blue-400/30 bg-blue-400/5';
+      case 'intercept': return 'text-slate-400 border-slate-600/30 bg-slate-400/5';
+      case 'status': return 'text-white border-slate-600/30 bg-slate-800/20';
       default: return 'text-white border-slate-600/30 bg-slate-800/20';
     }
   };
@@ -33,7 +34,7 @@ export const SimulationLog = ({ logs, onClearLogs }) => {
 
   const exportLogs = () => {
     const logData = logs.map(log => 
-      `[${log.timestamp}] ${log.type.toUpperCase()}: ${log.message}`
+      `[${log.timestamp}] ${log.type.toUpperCase()}: From ${log.source} → ${JSON.stringify(log.payload)}`
     ).join('\n');
     
     const blob = new Blob([logData], { type: 'text/plain' });
@@ -59,9 +60,7 @@ export const SimulationLog = ({ logs, onClearLogs }) => {
               <h2 className="text-lg font-bold text-white">
                 Simulation Log
               </h2>
-              <p className="text-xs text-slate-400">
-                Live mission updates
-              </p>
+              <p className="text-xs text-slate-400">Live mission updates</p>
             </div>
           </div>
           <div className="flex items-center gap-2">
@@ -93,10 +92,7 @@ export const SimulationLog = ({ logs, onClearLogs }) => {
         </div>
       </div>
 
-      <div 
-        ref={logContainerRef}
-        className="flex-1 overflow-y-auto p-4 space-y-3"
-      >
+      <div ref={logContainerRef} className="flex-1 overflow-y-auto p-4 space-y-3">
         {logs.length === 0 ? (
           <div className="text-center text-slate-500 py-12">
             <div className="w-16 h-16 bg-slate-800/50 rounded-full flex items-center justify-center mx-auto mb-4">
@@ -106,15 +102,13 @@ export const SimulationLog = ({ logs, onClearLogs }) => {
             <p className="text-xs">Select a threat to begin simulation</p>
           </div>
         ) : (
-          logs.map((log) => (
+          logs.map((log, i) => (
             <div
-              key={log.id}
-              className={`rounded-xl border backdrop-blur-sm p-4 hover:bg-slate-700/20 transition-all duration-200 ${getPriorityColor(log.priority)}`}
+              key={i}
+              className={`rounded-xl border backdrop-blur-sm p-4 hover:bg-slate-700/20 transition-all duration-200 ${getPriorityColor(log.type)}`}
             >
               <div className="flex items-start gap-3">
-                <div className="flex-shrink-0 mt-0.5">
-                  {getTypeIcon(log.type)}
-                </div>
+                <div className="flex-shrink-0 mt-0.5">{getTypeIcon(log.type)}</div>
                 <div className="flex-1 min-w-0">
                   <div className="flex items-center gap-2 mb-2">
                     <span className="text-xs text-slate-400 font-medium">
@@ -125,7 +119,9 @@ export const SimulationLog = ({ logs, onClearLogs }) => {
                     </span>
                   </div>
                   <p className="text-sm leading-relaxed font-medium">
-                    {log.message}
+                    Source: <span className="text-white">{log.source}</span>
+                    <br />
+                    Payload: <span className="text-slate-300">{JSON.stringify(log.payload)}</span>
                   </p>
                 </div>
               </div>

@@ -1,68 +1,43 @@
+
+
 import React, { useState } from 'react';
 import { Header } from './components/Header.jsx';
 import { ThreatDashboard } from './components/ThreatDashboard.jsx';
 import { TerritoryMap } from './components/TerritoryMap.jsx';
 import { SimulationLog } from './components/SimulationLog.jsx';
 import { MissileParameterModal } from './components/MissileParameterModal.jsx';
-import { useSimulation } from './hooks/useSimulation.js';
 
 function App() {
   const [selectedThreat, setSelectedThreat] = useState(null);
   const [isModalOpen, setIsModalOpen] = useState(false);
-  
-  const {
-    logs,
-    radarContacts,
-    isActive,
-    simulateThreatDetection,
-    clearLogs,
-    clearRadarContacts,
-  } = useSimulation();
+  const [logs, setLogs] = useState([]);
 
-  const handleThreatSelect = (threat) => {
-    setSelectedThreat(threat);
-    setIsModalOpen(true);
+  const handleLogUpdate = (newLog) => {
+    setLogs((prevLogs) => [...prevLogs.slice(-49), newLog]);
   };
 
-  const handleModalClose = () => {
-    setIsModalOpen(false);
-    setSelectedThreat(null);
-  };
-
-  const handleSimulate = (params) => {
-    if (selectedThreat) {
-      simulateThreatDetection(params, selectedThreat.name);
-    }
-  };
-
-  const getSystemStatus = () => {
-    if (isActive) return 'active';
-    if (radarContacts.some(contact => contact.status === 'active')) return 'alert';
-    return 'standby';
-  };
+  const clearLogs = () => setLogs([]);
 
   return (
     <div className="h-screen bg-military-dark flex flex-col overflow-hidden">
-      <Header 
-        systemStatus={getSystemStatus()}
-      />
-      
+      <Header systemStatus="active" />
+
       <div className="flex-1 flex overflow-hidden">
-        <ThreatDashboard onThreatSelect={handleThreatSelect} />
-        <div className='m-2'>
-        <TerritoryMap />
+        <ThreatDashboard onThreatSelect={setSelectedThreat} />
+        <div className="m-2">
+          <TerritoryMap onLogsUpdate={handleLogUpdate} />
         </div>
-        <SimulationLog 
-          logs={logs}
-          onClearLogs={clearLogs}
-        />
+        <SimulationLog logs={logs} onClearLogs={clearLogs} />
       </div>
 
       <MissileParameterModal
         threat={selectedThreat}
         isOpen={isModalOpen}
-        onClose={handleModalClose}
-        onSimulate={handleSimulate}
+        onClose={() => {
+          setSelectedThreat(null);
+          setIsModalOpen(false);
+        }}
+        onSimulate={() => {}}
       />
     </div>
   );
