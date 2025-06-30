@@ -2,35 +2,36 @@
 import React, { useEffect, useState } from "react";
 import { Line } from "react-konva";
 
-export default function SignalLayer({ signals }) {
+export default function SignalLayer({ signals}) {
   const [signalLines, setSignalLines] = useState([]);
 
-  useEffect(() => {
-    signals.forEach((signal) => {
-      setSignalLines((prev) => [
-        ...prev,
-        {
-          id: Date.now() + Math.random(), 
-          from: signal.from,
-          to: signal.to,
-          color: signal.color || "yellow",
-          progress: 0,
-        },
-      ]);
-    });
-  }, [signals]);
+useEffect(() => {
+  const newSignals = signals.map((signal) => ({
+    id: Date.now() + Math.random(),
+    from: signal.from,
+    to: signal.to,
+    color: signal.color || "yellow",
+    progress: 0,
+  }));
+
+  setSignalLines((prev) => [...prev, ...newSignals]);
+}, [signals]);
 
 
   useEffect(() => {
     const interval = setInterval(() => {
-      setSignalLines((prev) =>
-        prev
-          .map((line) => ({
-            ...line,
-            progress: line.progress + 0.04,
-          }))
-          .filter((line) => line.progress <= 1)
-      );
+     setSignalLines((prev) =>
+  prev
+    .map((line) => {
+      const newProgress = line.progress + (line.speed || 0.01);
+      return {
+        ...line,
+        progress: newProgress,
+      };
+    })
+    .filter((line) => line.progress <= 1)
+);
+
     }, 16);
     return () => clearInterval(interval);
   }, []);

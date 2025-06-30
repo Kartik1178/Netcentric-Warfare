@@ -1,4 +1,3 @@
-
 import express from "express";
 import http from "http";
 import { Server } from "socket.io";
@@ -13,11 +12,16 @@ const io = new Server(server, {
 io.on("connection", (socket) => {
   console.log("New client connected:", socket.id);
 
- socket.on("unit-signal",(data)=>{
-    const {source,type,payload}=data;
-    console.log(`${source} sent signal :${type}`,payload)
-   io.emit("unit-signal", data);
-  })
+  socket.on("relay-to-antenna", (data) => {
+    console.log("🔁 Relaying radar to antenna:", data);
+    io.emit("relay-to-antenna", data);
+  });
+
+  socket.on("unit-signal", (data) => {
+    const { source, type, payload } = data;
+    console.log(`${source} sent signal :${type}`, payload);
+    io.emit("unit-signal", data);
+  });
 
   socket.on("disconnect", () => {
     console.log("Client disconnected:", socket.id);

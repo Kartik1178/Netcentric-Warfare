@@ -39,7 +39,7 @@ export default function Radar({ x, y, radius = 20, objects }) {
       threats.forEach((missile) => {
         if (!detectedMissiles.current.has(missile.id)) {
           console.log("✅ Radar detected missile:", missile);
-          socket.emit("unit-signal", {
+          socket.emit("relay-to-antenna", {
             source: "radar",
             type: "relay-to-antenna",
             from: { x, y },
@@ -57,7 +57,7 @@ export default function Radar({ x, y, radius = 20, objects }) {
 
     const interval = setInterval(detectMissiles, 1000);
     return () => clearInterval(interval);
-  }, [x, y]); // ❌ DO NOT include `objects` here
+  }, [x, y]);
 
   return (
     <Group x={x} y={y}>
@@ -67,7 +67,6 @@ export default function Radar({ x, y, radius = 20, objects }) {
         shadowBlur={4}
         shadowColor="black"
       />
-      {/* Optional: show detection zone for testing */}
       <Circle
         radius={150}
         stroke="rgba(0,255,0,0.3)"

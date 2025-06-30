@@ -4,21 +4,22 @@ import { Image, Group, Circle } from "react-konva";
 import useImage from "use-image";
 import socket from "../socket";
 
-export default function Launcher({ x, y, radius = 20 }) {
+export default function Launcher({ x, y, radius = 20,onLaunchInterceptor}) {
   const [image] = useImage("/launcher.png");
-  const [targets, setTargets] = useState([]);
 useEffect(() => {
   const handleSignal = (data) => {
-    const { source, type, payload } = data;
+    const { source, type, payload,from,to } = data;
 
     if (source === "antenna" && type === "threat-detected") {
       console.log("Launcher received threat from antenna", payload);
-      setTargets((prev) => [...prev, payload]);
-        socket.emit("unit-signal", {
-        source: "launcher",
-        type: "engage-target",
-        payload: payload, 
-      });
+      onLaunchInterceptor?.({
+          launcherX: x,
+          launcherY: y,
+          targetX: payload.x,
+          targetY: payload.y,
+          threatId: payload.id
+        });
+ 
     }
   };
 
