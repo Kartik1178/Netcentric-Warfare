@@ -51,6 +51,8 @@ export default function Radar({ x, y, radius = 20, objects }) {
             },
           });
           detectedMissiles.current.add(missile.id);
+          console.log("Detected missiles so far:", Array.from(detectedMissiles.current));
+
         }
       });
     };

@@ -7,6 +7,7 @@ import Antenna from "./AntennaUnit";
 import { Interceptor } from "./Interceptor";
 import Jammer from "./JammerUnit";
 import SignalLayer from "./SignalLayer";
+import { useEffect } from "react";
 const MAP_WIDTH = 1000;
 const MAP_HEIGHT = window.innerHeight * 0.9; 
 
@@ -16,7 +17,20 @@ const BUFFER_RADIUS = 400;
 
 const BASE_START_X = (MAP_WIDTH - BASE_SIZE) / 2;
 const BASE_START_Y = (MAP_HEIGHT - BASE_SIZE) / 2;
-export default function GridCanvas({ objects = [],incomingSignals = [], onLaunchInterceptor }) {
+export default function GridCanvas({ objects = [],incomingSignals = [], setIncomingSignals, onLaunchInterceptor }) {
+   useEffect(() => {
+
+  const interval = setInterval(() => {
+      const now = Date.now();
+      setIncomingSignals((prev) =>
+        prev.filter((signal) => now - signal.createdAt < 2000) // 2 seconds
+      );
+    }, 500); // Check every 0.5s
+
+    return () => clearInterval(interval);
+  }, [setIncomingSignals]);
+  
+  
   return (
     <Stage width={MAP_WIDTH} height={MAP_HEIGHT}>
     <Layer>

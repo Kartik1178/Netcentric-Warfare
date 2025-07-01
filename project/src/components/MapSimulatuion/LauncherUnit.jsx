@@ -12,14 +12,17 @@ useEffect(() => {
 
     if (source === "antenna" && type === "threat-detected") {
       console.log("Launcher received threat from antenna", payload);
-      onLaunchInterceptor?.({
-          launcherX: x,
-          launcherY: y,
-          targetX: payload.x,
-          targetY: payload.y,
-          threatId: payload.id
-        });
- 
+       setTimeout(() => {
+          onLaunchInterceptor?.({
+            launcherX: x,
+            launcherY: y,
+            targetX: payload.x,
+            targetY: payload.y,
+            threatId: payload.id,
+          });
+
+          console.log(" Interceptor launched after delay:", payload);
+        }, 3000);
     }
   };
 

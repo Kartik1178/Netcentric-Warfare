@@ -65,6 +65,7 @@ const launchInterceptor = ({ launcherX, launcherY, targetX, targetY, threatId })
           source: data.source,
           type: data.type,
           payload: data.payload,
+            createdAt: Date.now(),
         },
       ]);
     }
@@ -90,6 +91,7 @@ const launchInterceptor = ({ launcherX, launcherY, targetX, targetY, threatId })
           source: "radar",
           type: "relay-to-antenna",
           payload: data.payload,
+          createdAt: Date.now(),
 
         },
       ]);

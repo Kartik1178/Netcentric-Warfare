@@ -17,19 +17,19 @@ export default function Antenna({ x, y, radius = 20 }) {
           source: "antenna",
           type: "threat-detected",
           from: { x: x ?? 420, y: y ?? 325 },
-          to: { x: 560, y: 325 }, // Example: launcher location
+          to: { x: 560, y: 325 }, 
           payload,
         };
 
         if (socket && socket.connected) {
-          console.log("⏳ Will emit signal from antenna after 5s:", emitData);
-          // ✅ Delay the emit using setTimeout — only for this signal
+          console.log(" Will emit signal from antenna after 5s:", emitData);
+          
           setTimeout(() => {
             socket.emit("unit-signal", emitData);
-            console.log("📤 Antenna emitted signal:", emitData);
-          }, 5000); // 5-second delay
+            console.log(" Antenna emitted signal:", emitData);
+          }, 3000);
         } else {
-          console.error("🚫 Socket is not connected.");
+          console.error(" Socket is not connected.");
         }
       }
     };
