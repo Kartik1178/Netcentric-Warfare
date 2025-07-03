@@ -112,9 +112,19 @@ const launchInterceptor = ({ launcherX, launcherY, targetX, targetY, threatId })
     setObjects([
       { id: "m1", type: "missile", x: 300, y: 450 },
       { id: "a1", type: "antenna", x: 420, y: 325 },
-      { id: "r1", type: "radar", x: 420, y: 465 },
+      { id: "r1", type: "radar", frequency: "2GHz", x: 420, y: 465 },
       { id: "l1", type: "launcher", x: 560, y: 325 },
-      { id: "j1", type: "jammer", x: 560, y: 465 },
+        {
+      id: "j1",
+      type: "jammer",
+      startX: 30,
+      startY: 30,
+      targetX: 470,
+      targetY: 500,
+      radius: 10,
+      frequency: "2GHz",
+      speed: 1.5
+    }
     ]);
   }, []);
 

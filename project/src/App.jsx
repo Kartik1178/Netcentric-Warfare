@@ -27,7 +27,9 @@ function App() {
         <div className="m-2">
           <TerritoryMap onLogsUpdate={handleLogUpdate} />
         </div>
+        
         <SimulationLog logs={logs} onClearLogs={clearLogs} />
+     
       </div>
 
       <MissileParameterModal

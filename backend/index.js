@@ -2,13 +2,17 @@ import express from "express";
 import http from "http";
 import { Server } from "socket.io";
 import cors from "cors";
-
+import { connectToMongo, getDb } from "./db.js";
+import missileRoutes from "./routes/Missiles.js"
 const app = express();
 const server = http.createServer(app);
 const io = new Server(server, {
   cors: { origin: "*" }
 });
-
+await connectToMongo();
+const db = getDb();
+const logsCollection = db.collection("logs");
+app.use(missileRoutes);
 io.on("connection", (socket) => {
   console.log("New client connected:", socket.id);
 
@@ -22,7 +26,10 @@ io.on("connection", (socket) => {
     console.log(`${source} sent signal :${type}`, payload);
     io.emit("unit-signal", data);
   });
-
+socket.on("jammer-broadcast", (data) => {
+    console.log(" Jammer broadcast:", data);
+    io.emit("jammer-broadcast", data);
+  });
   socket.on("disconnect", () => {
     console.log("Client disconnected:", socket.id);
   });
