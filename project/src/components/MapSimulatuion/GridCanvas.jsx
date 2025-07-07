@@ -17,7 +17,15 @@ const BUFFER_RADIUS = 400;
 
 const BASE_START_X = (MAP_WIDTH - BASE_SIZE) / 2;
 const BASE_START_Y = (MAP_HEIGHT - BASE_SIZE) / 2;
-export default function GridCanvas({ objects = [],incomingSignals = [], setIncomingSignals, onLaunchInterceptor }) {
+export default function GridCanvas({  objects = [],
+  incomingSignals = [],
+  setIncomingSignals,
+  onLaunchInterceptor,
+  jammerReports,
+  setJammerReports,
+  currentFrequency,
+  setCurrentFrequency,
+  availableFrequencies, }) {
    useEffect(() => {
 
   const interval = setInterval(() => {
@@ -94,12 +102,20 @@ export default function GridCanvas({ objects = [],incomingSignals = [], setIncom
 
        {objects.map((obj, i) => {
           if (obj.type === "missile") return <Missile key={obj.id || i} {...obj} />;
-          if (obj.type === "radar") return <Radar key={obj.id || i} {...obj} objects={objects} />;
+          if (obj.type === "radar") return <Radar key={obj.id || i} {...obj} objects={objects} jammerReports={jammerReports}
+                setJammerReports={setJammerReports}
+                currentFrequency={currentFrequency}
+                setCurrentFrequency={setCurrentFrequency}
+                availableFrequencies={availableFrequencies} />;
           if (obj.type === "launcher") return <Launcher key={obj.id || i} {...obj} onLaunchInterceptor={onLaunchInterceptor}   />;
             if (obj.type === "interceptor") return <Interceptor key={obj.id} {...obj} />;
           if (obj.type === "jammer") return <Jammer key={obj.id || i} {...obj} />;
-          if (obj.type === "antenna") return <Antenna key={obj.id || i} {...obj} />;
-          return null;
+          if (obj.type === "antenna") return <Antenna key={obj.id || i} {...obj}
+ jammerReports={jammerReports}
+                setJammerReports={setJammerReports}
+                currentFrequency={currentFrequency}
+                setCurrentFrequency={setCurrentFrequency}
+                availableFrequencies={availableFrequencies} />
         })}
     </Layer>
   </Stage>

@@ -20,7 +20,11 @@ io.on("connection", (socket) => {
     console.log("🔁 Relaying radar to antenna:", data);
     io.emit("relay-to-antenna", data);
   });
-
+  socket.on("frequency-change", (data) => {
+    console.log(`📡 Server received frequency change from ${data.unitId}: ${data.newFrequency}`);
+   io.emit("frequency-change", data);
+    socket.emit("frequency-change-ack", { status: "received" });
+  });
   socket.on("unit-signal", (data) => {
     const { source, type, payload } = data;
     console.log(`${source} sent signal :${type}`, payload);

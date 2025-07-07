@@ -1,16 +1,20 @@
 import React, { useEffect, useRef, useState } from "react";
-import { Image, Group, Circle } from "react-konva";
+import { Image, Group, Circle, Text } from "react-konva";
 import useImage from "use-image";
-import { useJammerDetection } from "./JammerDetection";
+import { useJammerDetection } from "../../hooks/JammerDetection";
+import { useCognitiveRadio } from "../../hooks/useCognitiveRadio";
 import socket from "../socket";
-
 export default function Radar({
-  id,
+    id,
   x,
   y,
   radius = 20,
   objects,
-  frequency = "2GHz",
+  jammerReports,
+  setJammerReports,
+  currentFrequency,
+  setCurrentFrequency,
+  availableFrequencies,
 }) {
   const [image] = useImage("/satellite-dish.png");
   const detectedMissiles = useRef(new Set());
@@ -20,6 +24,16 @@ export default function Radar({
   const isJammedRef = useRef(false); 
   const jammedUntil = useRef(0);
 
+ 
+
+  useCognitiveRadio({
+    id,
+    jammerReports,
+    availableFrequencies,
+    currentFrequency,
+    setCurrentFrequency,
+  });
+
   useEffect(() => {
     latestObjects.current = objects;
   }, [objects]);
@@ -27,12 +41,27 @@ export default function Radar({
   useEffect(() => {
     isJammedRef.current = isJammed;
   }, [isJammed]);
+  useEffect(() => {
+  const handleFrequencyChange = (data) => {
+    if (data.unitId !== id) {
+      console.log(`[Radar ${id}] Received frequency-change from ${data.unitId}:`, data);
+
+      // Optional: follow frequency if needed
+      // setCurrentFrequency(data.newFrequency); 
+      // Or update UI/logs only
+    }
+  };
+
+  socket.on("frequency-change", handleFrequencyChange);
+  return () => socket.off("frequency-change", handleFrequencyChange);
+}, [id]);
+
 
   useJammerDetection({
     id,
     x,
     y,
-    myFrequency: frequency,
+    myFrequency: currentFrequency,
     jammerHandler: (isAffected, jammer) => {
       const now = Date.now();
       if (isAffected) {
@@ -45,6 +74,7 @@ export default function Radar({
         `[Radar ${id}] Jammed by ${jammer.id}? ${isAffected} → Still jammed? ${stillJammed}`
       );
     },
+    setJammerReports,
   });
 
   useEffect(() => {
@@ -99,7 +129,7 @@ export default function Radar({
 
     const interval = setInterval(detectMissiles, 1000);
     return () => clearInterval(interval);
-  }, [x, y]); // No need to add isJammed here, we use the ref!
+  }, [x, y]);
 
   return (
     <Group x={x} y={y}>
@@ -129,6 +159,13 @@ export default function Radar({
           }}
         />
       )}
+      <Text
+        text={`Freq: ${currentFrequency}`}
+        x={-radius}
+        y={radius + 5}
+        fill="#fff"
+        fontSize={12}
+      />
     </Group>
   );
 }

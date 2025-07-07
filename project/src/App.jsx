@@ -6,6 +6,7 @@ import { ThreatDashboard } from './components/ThreatDashboard.jsx';
 import { TerritoryMap } from './components/TerritoryMap.jsx';
 import { SimulationLog } from './components/SimulationLog.jsx';
 import { MissileParameterModal } from './components/MissileParameterModal.jsx';
+import { SDRProvider } from './hooks/SDRContext.jsx';
 
 function App() {
   const [selectedThreat, setSelectedThreat] = useState(null);
@@ -25,7 +26,9 @@ function App() {
       <div className="flex-1 flex overflow-hidden">
         <ThreatDashboard onThreatSelect={setSelectedThreat} />
         <div className="m-2">
+          <SDRProvider>
           <TerritoryMap onLogsUpdate={handleLogUpdate} />
+        </SDRProvider>
         </div>
         
         <SimulationLog logs={logs} onClearLogs={clearLogs} />

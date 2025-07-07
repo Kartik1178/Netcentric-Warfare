@@ -1,10 +1,21 @@
-import React, { useEffect, useState, useRef } from "react";
-import { Image, Group, Circle } from "react-konva";
+import React, { useEffect, useRef, useState } from "react";
+import { Image, Group, Circle, Text } from "react-konva";
 import useImage from "use-image";
 import socket from "../socket";
-import { useJammerDetection } from "./JammerDetection";
+import { useJammerDetection } from "../../hooks/JammerDetection";
+import { useCognitiveRadio } from "../../hooks/useCognitiveRadio";
 
-export default function Antenna({ id = "antenna", x, y, radius = 20, frequency = "2GHz" }) {
+export default function Antenna({
+  id,
+  x,
+  y,
+  radius = 20,
+  jammerReports,
+  setJammerReports,
+  currentFrequency,
+  setCurrentFrequency,
+  availableFrequencies,
+}) {
   const [image] = useImage("/antenna.png");
 
   const [isJammed, setIsJammed] = useState(false);
@@ -15,21 +26,33 @@ export default function Antenna({ id = "antenna", x, y, radius = 20, frequency =
     isJammedRef.current = isJammed;
   }, [isJammed]);
 
+  useCognitiveRadio({
+    id,
+    jammerReports,
+    availableFrequencies,
+    currentFrequency,
+    setCurrentFrequency,
+  });
+
+
   useJammerDetection({
     id,
     x,
     y,
-    myFrequency: frequency,
+    myFrequency: currentFrequency,
     jammerHandler: (isAffected, jammer) => {
       const now = Date.now();
       if (isAffected) {
-        jammedUntil.current = now + 1000; // Jam for 1s
+        jammedUntil.current = now + 1000;
       }
       const stillJammed = now < jammedUntil.current;
       setIsJammed(stillJammed);
 
-      console.log(`[Antenna ${id}] Jammed by ${jammer.id}? ${isAffected} → Still jammed? ${stillJammed}`);
+      console.log(
+        `[Antenna ${id}] Jammed by ${jammer.id}? ${isAffected} → Still jammed? ${stillJammed}`
+      );
     },
+    setJammerReports,
   });
 
   useEffect(() => {
@@ -37,7 +60,7 @@ export default function Antenna({ id = "antenna", x, y, radius = 20, frequency =
       const { source, type, payload } = data;
 
       if (source === "radar" && type === "relay-to-antenna") {
-        console.log("📡 Antenna received signal from radar:", payload);
+        console.log(`[Antenna ${id}] Received relay-to-antenna:`, payload);
 
         const emitData = {
           source: "antenna",
@@ -48,18 +71,16 @@ export default function Antenna({ id = "antenna", x, y, radius = 20, frequency =
         };
 
         if (socket && socket.connected) {
-          console.log("⏱️ Will emit signal from antenna after 3s:", emitData);
+          console.log(`[Antenna ${id}] Scheduling threat signal...`);
 
           setTimeout(() => {
             if (isJammedRef.current) {
               console.log(`[Antenna ${id}] Jammed during emission! Signal blocked.`);
-              return; // Do not emit if jammed
+              return;
             }
             socket.emit("unit-signal", emitData);
-            console.log("✅ Antenna emitted signal:", emitData);
+            console.log(`[Antenna ${id}] ✅ Emitted threat-detected:`, emitData);
           }, 3000);
-        } else {
-          console.error("❌ Socket is not connected.");
         }
       }
     };
@@ -67,6 +88,17 @@ export default function Antenna({ id = "antenna", x, y, radius = 20, frequency =
     socket.on("relay-to-antenna", handleRadarSignal);
     return () => socket.off("relay-to-antenna", handleRadarSignal);
   }, [x, y]);
+
+  useEffect(() => {
+    const handleFrequencyChange = (data) => {
+      if (data.unitId !== id) {
+        console.log(`[Antenna ${id}] Received frequency-change from ${data.unitId}:`, data);
+      }
+    };
+
+    socket.on("frequency-change", handleFrequencyChange);
+    return () => socket.off("frequency-change", handleFrequencyChange);
+  }, [id]);
 
   return (
     <Group x={x} y={y}>
@@ -90,6 +122,13 @@ export default function Antenna({ id = "antenna", x, y, radius = 20, frequency =
           }}
         />
       )}
+      <Text
+        text={`Freq: ${currentFrequency}`}
+        x={-radius}
+        y={radius + 5}
+        fill="#fff"
+        fontSize={12}
+      />
     </Group>
   );
 }
