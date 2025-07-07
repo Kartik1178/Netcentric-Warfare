@@ -26,6 +26,8 @@ export const MissileParameterModal = ({
     }
   };
 
+  
+
   const handleInputChange = (field, value) => {
     setParameters(prev => ({
       ...prev,
@@ -33,7 +35,6 @@ export const MissileParameterModal = ({
     }));
   };
 
-  if (!isOpen || !threat) return null;
 
   const estimatedThreatTime = Math.round(parameters.distance / (parameters.speed / 3600));
 
