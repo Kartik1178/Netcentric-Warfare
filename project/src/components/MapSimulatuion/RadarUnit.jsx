@@ -46,9 +46,7 @@ export default function Radar({
     if (data.unitId !== id) {
       console.log(`[Radar ${id}] Received frequency-change from ${data.unitId}:`, data);
 
-      // Optional: follow frequency if needed
-      // setCurrentFrequency(data.newFrequency); 
-      // Or update UI/logs only
+      
     }
   };
 

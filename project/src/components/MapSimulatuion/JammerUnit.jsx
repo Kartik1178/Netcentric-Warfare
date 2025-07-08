@@ -11,7 +11,7 @@ export default function Jammer({
   targetX,
   targetY,
   radius = 5,
-   effectRadius = 150, 
+   effectRadius, 
   speed = 1.5,
   frequency = "2GHz",
 }) {

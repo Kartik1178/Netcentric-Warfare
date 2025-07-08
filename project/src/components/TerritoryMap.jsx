@@ -3,7 +3,7 @@ import GridCanvas from "./MapSimulatuion/GridCanvas";
 import socket from "./socket";
 import { useSDR } from "../hooks/SDRContext";
 
-export function TerritoryMap({ onLogsUpdate }) {
+export function TerritoryMap({ onLogsUpdate,newMissile,newJammer }) {
   const {
     jammerReports,
     setJammerReports,
@@ -14,6 +14,45 @@ export function TerritoryMap({ onLogsUpdate }) {
 
   const [objects, setObjects] = useState([]);
   const [incomingSignals, setIncomingSignals] = useState([]);
+// 📌 Compute the centroid of all active missiles
+const getMissileCentroid = (missiles) => {
+  if (missiles.length === 0) return { x: 400, y: 400 }; // fallback center
+  const sumX = missiles.reduce((acc, m) => acc + m.x, 0);
+  const sumY = missiles.reduce((acc, m) => acc + m.y, 0);
+  return { x: sumX / missiles.length, y: sumY / missiles.length };
+};
+
+// 📌 Compute the general bearing of threats (optional)
+const getThreatBearing = (missiles) => {
+  if (missiles.length === 0) return 0;
+  const centroid = getMissileCentroid(missiles);
+  const baseX = 420; // your base center X
+  const baseY = 325; // your base center Y
+
+  const dx = centroid.x - baseX;
+  const dy = centroid.y - baseY;
+
+  const angleRad = Math.atan2(dy, dx);
+  const angleDeg = (angleRad * 180) / Math.PI;
+
+  return angleDeg;
+};
+
+// 📌 Add unit helper functions
+const addRadarUnit = (x, y) => {
+  const id = `radar-${Date.now()}`;
+  setObjects(prev => [...prev, { id, type: "radar", x, y }]);
+};
+
+const addAntennaUnit = (x, y) => {
+  const id = `antenna-${Date.now()}`;
+  setObjects(prev => [...prev, { id, type: "antenna", x, y }]);
+};
+
+const addLauncherUnit = (x, y) => {
+  const id = `launcher-${Date.now()}`;
+  setObjects(prev => [...prev, { id, type: "launcher", x, y }]);
+};
 
   const getColorBySource = (source) => {
     switch (source) {
@@ -31,7 +70,7 @@ export function TerritoryMap({ onLogsUpdate }) {
         return "white";
     }
   };
-
+ 
   const launchInterceptor = ({ launcherX, launcherY, targetX, targetY, threatId }) => {
     const newInterceptor = {
       id: `interceptor-${Date.now()}`,
@@ -132,26 +171,108 @@ export function TerritoryMap({ onLogsUpdate }) {
       socket.off("frequency-change", handleFrequencyChange);
     };
   }, [onLogsUpdate]);
+  useEffect(() => {
+  const missiles = objects.filter(obj => obj.type === "missile");
+  const missileCount = missiles.length;
+
+  if (missileCount === 0) return;
+
+  const radarCount = objects.filter(obj => obj.type === "radar").length;
+  const antennaCount = objects.filter(obj => obj.type === "antenna").length;
+  const launcherCount = objects.filter(obj => obj.type === "launcher").length;
+
+  // How many units you want per missile (adjustable)
+  const neededRadars = Math.ceil(missileCount / 1); // 1 per missile
+  const neededAntennas = Math.ceil(missileCount / 1);
+  const neededLaunchers = Math.ceil(missileCount / 1);
+
+  const centroid = getMissileCentroid(missiles);
+  const bearing = getThreatBearing(missiles);
+
+  // Distance to deploy from centroid toward threat
+  const deployDistance = 100;
+  const rad = (bearing * Math.PI) / 180;
+
+  const deployX = centroid.x + deployDistance * Math.cos(rad);
+  const deployY = centroid.y + deployDistance * Math.sin(rad);
+
+  if (radarCount < neededRadars) {
+    addRadarUnit(deployX, deployY);
+  }
+
+  if (antennaCount < neededAntennas) {
+    addAntennaUnit(deployX + 30, deployY); // slight offset
+  }
+
+  if (launcherCount < neededLaunchers) {
+    addLauncherUnit(deployX - 30, deployY);
+  }
+
+}, [objects]);
+
 
   useEffect(() => {
     setObjects([
-      { id: "m1", type: "missile", x: 300, y: 450 },
+
       { id: "a1", type: "antenna", x: 420, y: 325 },
       { id: "r1", type: "radar", frequency: "2GHz", x: 420, y: 465 },
       { id: "l1", type: "launcher", x: 560, y: 325 },
-      {
-        id: "j1",
-        type: "jammer",
-        startX: 30,
-        startY: 30,
-        targetX: 470,
-        targetY: 400,
-        radius: 10,
-        frequency: "2GHz",
-        speed: 1.5,
-      },
+     
     ]);
   }, []);
+  useEffect(() => {
+  if (newJammer) {
+    // Defensive fallback for position
+    const posX = newJammer.position?.x ?? 0;
+    const posY = newJammer.position?.y ?? 0;
+console.log("✅ newJammer.range", newJammer.range);
+    const jammerObj = {
+      id: `jammer-${Date.now()}`,
+      type: "jammer",
+      startX: posX, 
+      startY: posY, 
+targetX: 470,
+        targetY: 400,    radius: 10,   frequency: "2GHz",
+        effectRadius:150,  
+speed: 1.5,
+      
+      
+    };
+
+    setObjects((prev) => [...prev, jammerObj]);
+
+    onLogsUpdate?.({
+      timestamp: new Date().toLocaleTimeString(),
+      source: "system",
+      type: "jammer-activated",
+      payload: jammerObj,
+      message: `New jammer '${jammerObj.name}' activated.`,
+    });
+  }
+}, [newJammer]);
+   useEffect(() => {
+    if (newMissile) {
+      const missileObj = {
+        id: `missile-${Date.now()}`,
+        type: "missile",
+         x:0,
+      y: 0,
+      targetX: Number(newMissile.targetPosition.x),
+      targetY: Number(newMissile.targetPosition.y),
+      speed: Number(newMissile.speed),
+      };
+
+      setObjects((prev) => [...prev, missileObj]);
+
+      onLogsUpdate?.({
+        timestamp: new Date().toLocaleTimeString(),
+        source: "system",
+        type: "missile-simulated",
+        payload: missileObj,
+        message: `New missile launched towards base.`,
+      });
+    }
+  }, [newMissile]);
 
   useEffect(() => {
     const interval = setInterval(() => {

@@ -101,7 +101,14 @@ export default function GridCanvas({  objects = [],
       <SignalLayer signals={incomingSignals}/>
 
        {objects.map((obj, i) => {
-          if (obj.type === "missile") return <Missile key={obj.id || i} {...obj} />;
+          if (obj.type === "missile") return  <Missile
+        key={obj.id}
+        x={obj.x}
+        y={obj.y}
+        targetX={obj.targetX}
+        targetY={obj.targetY}
+        speed={obj.speed}
+      />;
           if (obj.type === "radar") return <Radar key={obj.id || i} {...obj} objects={objects} jammerReports={jammerReports}
                 setJammerReports={setJammerReports}
                 currentFrequency={currentFrequency}
