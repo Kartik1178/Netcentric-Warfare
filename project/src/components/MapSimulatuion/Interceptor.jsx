@@ -1,36 +1,21 @@
-import React, { useEffect, useState } from 'react'
-import { Group,Circle,Image } from 'react-konva';
+import React from 'react';
+import { Group, Circle, Image, Line } from 'react-konva';
 import useImage from 'use-image';
-export const Interceptor = ({targetX,radius=10,targetY,x,y,speed=2}) => {
-   const [image] = useImage("/missile.png");
-  const [position,setPosition]=useState({x,y})
-  useEffect(()=>{
-const interval=setInterval(()=>{
-const dx=targetX-position.x;
-const dy = targetY - position.y;
-const distance = Math.sqrt(dx * dx + dy * dy);
-if (distance<5){
-  clearInterval(interval);
-   console.log(" Interceptor reached target!");
-   return;
-}
-setPosition((pos)=>({
-x: pos.x + (dx / distance) * speed,
-y: pos.y + (dy / distance) * speed
-}));
-},16);
- return () => clearInterval(interval);
-}, [position, targetX, targetY, speed]);
 
+export const Interceptor = ({
+  x,
+  y,
+  radius = 10,
+  heading,
+  collisionRadius
+}) => {
+  const [image] = useImage("/missile.png");
 
-  
-  
-    return (
- <Group x={position.x} y={position.y}>
-   
+  return (
+    <Group x={x} y={y}>
       <Circle
         radius={radius}
-        fill="green" 
+        fill="green"
         shadowBlur={4}
         shadowColor="black"
       />
@@ -43,11 +28,24 @@ y: pos.y + (dy / distance) * speed
           height={radius * 2}
           clipFunc={(ctx) => {
             ctx.beginPath();
-            ctx.arc(0, 0, radius, 0, Math.PI * 2, false);
+            ctx.arc(0, 0, radius, 0, Math.PI * 2);
             ctx.closePath();
           }}
         />
       )}
+      {/* Optional: Draw heading line for debug */}
+      <Line
+        points={[0, 0, Math.cos(heading) * 20, Math.sin(heading) * 20]}
+        stroke="yellow"
+        strokeWidth={2}
+      />
+      <Circle
+        radius={collisionRadius}
+        stroke="cyan"
+        strokeWidth={1}
+        dash={[4, 4]}
+        opacity={0.4}
+      />
     </Group>
-  )
-}
+  );
+};

@@ -14,57 +14,59 @@ export const MissileParameterModal = ({
   });
 
   const handleSubmit = (e) => {
-    e.preventDefault();
+  e.preventDefault();
 
-    if (threat) {
-      // 🛡️ Defensive coercion
-      const safeDirection = Number(parameters.direction) || 0;
-      const safeDistance = Number(parameters.distance) || 0;
+  if (threat) {
+    // ✅ Defensive coercion
+    const safeDirection = Number(parameters.direction) || 0;
+    const safeDistance = Number(parameters.distance) || 0;
 
-      // Convert bearing and distance to x,y coordinates
-      const rad = safeDirection * (Math.PI / 180);
-      const startX = safeDistance * Math.sin(rad);
-      const startY = -safeDistance * Math.cos(rad);
+    const baseX = 420;  // your grid base X
+    const baseY = 465;  // your grid base Y
 
-      // 🛡️ Defensive Speed_Mach
-      const safeMach = Number(threat.Speed_Mach) || 0;
-      const speedKmH = safeMach * 1225; // Approx at sea level
+    const scaleFactor = 0.5; // adjust to match grid scale
+    const distancePx = safeDistance * scaleFactor;
 
-      // Normalize speed 0–10
-      const normalizedSpeed = safeMach > 0 ? Math.min(10, (safeMach / 20) * 10) : 1;
+    // ✅ Convert bearing and distance to coordinates RELATIVE to base
+    const rad = safeDirection * (Math.PI / 180);
+    const startX = baseX + distancePx * Math.sin(rad);
+    const startY = baseY - distancePx * Math.cos(rad);
 
-      // 🛡️ Final check: no NaNs
-      console.log("🚀 Simulating missile with:", {
-        startX, startY,
-        targetX: 420,
-        targetY: 465,
+    const safeMach = Number(threat.Speed_Mach) || 0;
+    const normalizedSpeed = safeMach > 0 ? Math.min(10, (safeMach / 20) * 10) : 1;
+
+    console.log("🚀 Simulating missile with:", {
+      startX, startY,
+      targetX: baseX,
+      targetY: baseY,
+      speed: normalizedSpeed,
+    });
+
+    if (
+      Number.isFinite(startX) &&
+      Number.isFinite(startY) &&
+      Number.isFinite(normalizedSpeed)
+    ) {
+      onSimulate({
+        ...parameters,
+        altitude: Number(parameters.altitude) || 0,
+        distance: safeDistance,
+        direction: safeDirection,
+        threatType: threat.name || "Unknown",
         speed: normalizedSpeed,
+        startPosition: { x: startX, y: startY },
+        targetPosition: { x: baseX, y: baseY },
       });
-
-      if (
-        Number.isFinite(startX) &&
-        Number.isFinite(startY) &&
-        Number.isFinite(normalizedSpeed)
-      ) {
-        onSimulate({
-          ...parameters,
-          altitude: Number(parameters.altitude) || 0,
-          distance: safeDistance,
-          direction: safeDirection,
-          threatType: threat.name || "Unknown",
-          speed: normalizedSpeed,
-          startPosition: { x: startX, y: startY },
-          targetPosition: { x: 420, y: 465 },
-        });
-      } else {
-        console.error("❌ Simulation aborted due to invalid values:", {
-          startX, startY, normalizedSpeed,
-        });
-      }
-
-      onClose();
+    } else {
+      console.error("❌ Simulation aborted due to invalid values:", {
+        startX, startY, normalizedSpeed,
+      });
     }
-  };
+
+    onClose();
+  }
+};
+
 
   const handleInputChange = (field, value) => {
     setParameters((prev) => ({

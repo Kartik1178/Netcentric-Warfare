@@ -51,6 +51,7 @@ useEffect(() => {
           category: threat.Category.toLowerCase(),
           type: threat.Type,
           origin: threat.Country,
+           rfSignature: threat.rfSignature || "None",
           specifications: {
             range: `${threat.Range_km} km`,
             speed: `Mach ${threat.Speed_Mach}`,

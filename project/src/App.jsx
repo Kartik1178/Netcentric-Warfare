@@ -48,9 +48,13 @@ const [newJammer, setNewJammer] = useState(null);
         onClose={() => {
           setSelectedThreat(null);
         }}
-          onSimulate={(missileData) => {
-          setNewMissile(missileData);
-        }}
+           onSimulate={(missileData) => {
+    const missileWithId = {
+      ...missileData,
+      id: `missile-${Date.now()}-${Math.random()}`,
+    };
+    setNewMissile(missileWithId);
+  }}
       />)}
    {selectedJammer && (
         <JammerParameterModal

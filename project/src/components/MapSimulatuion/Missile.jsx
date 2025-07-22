@@ -1,58 +1,45 @@
-// Missile.jsx
 import React, { useEffect, useRef, useState } from "react";
-import { Image, Group, Circle } from "react-konva";
+import { Image, Group, Circle, Line } from "react-konva";
 import useImage from "use-image";
 
-export default function Missile({
-  x,
-  y,
-  targetX,
-  targetY,
-  speed,
-  radius = 20,
-}) {
+export default function Missile({ x, y, radius = 20 }) {
   const [image] = useImage("/missile.png");
-const [position, setPosition] = useState({
-    x: Number(x) || 0,
-    y: Number(y) || 0,
-  });
-  const animRef = useRef(null);
+  const [trail, setTrail] = useState([]);
+  const trailRef = useRef([]);
 
   useEffect(() => {
-    const animate = () => {
-      const dx = Number(targetX) - position.x;
-      const dy = Number(targetY) - position.y;
-      const distance = Math.sqrt(dx * dx + dy * dy);
+    trailRef.current = [...trailRef.current, { x, y }];
 
-      if (distance < 1) {
-        cancelAnimationFrame(animRef.current);
-        return;
-      }
+    if (trailRef.current.length > 15) {
+      trailRef.current.shift(); // Limit trail size
+    }
 
-      const stepX = (dx / distance) * Number(speed);
-      const stepY = (dy / distance) * Number(speed);
-
-      setPosition((prev) => ({
-        x: prev.x + stepX,
-        y: prev.y + stepY,
-      }));
-      
-
-      animRef.current = requestAnimationFrame(animate);
-    };
-
-    animRef.current = requestAnimationFrame(animate);
-    return () => cancelAnimationFrame(animRef.current);
-  }, [targetX, targetY, speed]);
+    setTrail([...trailRef.current]);
+  }, [x, y]);
 
   return (
-    <Group x={position.x} y={position.y}>
+    <Group x={x} y={y}>
+      {/* Trail */}
+      <Line
+        points={trail.flatMap((p) => [p.x - x, p.y - y])}
+        stroke="rgba(255, 255, 255, 0.6)"
+        strokeWidth={2}
+        lineCap="round"
+        lineJoin="round"
+        tension={0.2}
+      />
+
+      {/* Missile body */}
       <Circle
         radius={radius}
-        fill="red"
+        fill="blue"
+        stroke="black"
+        strokeWidth={2}
         shadowBlur={4}
         shadowColor="black"
       />
+
+      {/* Missile image clipped in a circle */}
       {image && (
         <Image
           image={image}

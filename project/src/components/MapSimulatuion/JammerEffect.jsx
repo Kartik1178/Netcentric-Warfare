@@ -1,5 +1,4 @@
-
-import { useEffect,useRef } from "react";
+import { useEffect, useRef } from "react";
 import socket from "../socket";
 
 export function useJammerEffect({
@@ -8,23 +7,32 @@ export function useJammerEffect({
   y,
   radius,
   frequency,
-  interval = 100,
+  interval = 500, // more reasonable interval
 }) {
-     const latestPosition = useRef({ x, y });
-  latestPosition.current = { x, y };
+  const prevEmitRef = useRef({ x, y, frequency });
+
   useEffect(() => {
     const emitInterval = setInterval(() => {
-         const { x: currentX, y: currentY } = latestPosition.current;
-      socket.emit("jammer-broadcast", {
-        id,
-           x: currentX,
-        y: currentY,
-        radius,
-         effectRadius: 150,
-        frequency,
-      });
+      const hasChanged =
+        prevEmitRef.current.x !== x ||
+        prevEmitRef.current.y !== y ||
+        prevEmitRef.current.frequency !== frequency;
+
+      if (hasChanged) {
+        socket.emit("jammer-broadcast", {
+          id,
+          x,
+          y,
+          radius,
+          effectRadius: 150,
+          frequency,
+        });
+
+        // Update stored state
+        prevEmitRef.current = { x, y, frequency };
+      }
     }, interval);
 
     return () => clearInterval(emitInterval);
-  }, [id,radius, frequency, interval]);
+  }, [id, x, y, radius, frequency, interval]);
 }

@@ -4,17 +4,19 @@ import useImage from "use-image";
 import socket from "../socket";
 import { useJammerDetection } from "../../hooks/JammerDetection";
 import { useCognitiveRadio } from "../../hooks/useCognitiveRadio";
-
+import { CENTRAL_AI_POSITION } from "../../constants/AIconstant";
 export default function Antenna({
   id,
   x,
   y,
+  baseid,
   radius = 20,
   jammerReports,
   setJammerReports,
   currentFrequency,
   setCurrentFrequency,
   availableFrequencies,
+   emitSignal,
 }) {
   const [image] = useImage("/antenna.png");
 
@@ -34,42 +36,40 @@ export default function Antenna({
     setCurrentFrequency,
   });
 
+const previousJammedState = useRef(null);
 
-  useJammerDetection({
-    id,
-    x,
-    y,
-    myFrequency: currentFrequency,
-    jammerHandler: (isAffected, jammer) => {
-      const now = Date.now();
-      if (isAffected) {
-        jammedUntil.current = now + 1000;
-      }
-      const stillJammed = now < jammedUntil.current;
-      setIsJammed(stillJammed);
+useJammerDetection({
+  id,
+  x,
+  y,
+  myFrequency: currentFrequency,
+  jammerHandler: (isAffected, jammer) => {
+    const now = Date.now();
+    if (isAffected) jammedUntil.current = now + 1000;
 
+    const stillJammed = now < jammedUntil.current;
+    setIsJammed(stillJammed);
+
+    // Only log when jammed state changes
+    if (previousJammedState.current !== stillJammed) {
       console.log(
         `[Antenna ${id}] Jammed by ${jammer.id}? ${isAffected} → Still jammed? ${stillJammed}`
       );
-    },
-    setJammerReports,
-  });
+      previousJammedState.current = stillJammed;
+    }
+  },
+});
+
 
   useEffect(() => {
     const handleRadarSignal = (data) => {
       const { source, type, payload } = data;
 
-      if (source === "radar" && type === "relay-to-antenna") {
+      if ( type === "relay-to-antenna"  &&
+      payload?.targetAntennaId === id) {
         console.log(`[Antenna ${id}] Received relay-to-antenna:`, payload);
 
-        const emitData = {
-          source: "antenna",
-          type: "threat-detected",
-          from: { x: x ?? 420, y: y ?? 325 },
-          to: { x: 560, y: 325 },
-          payload,
-        };
-
+     
         if (socket && socket.connected) {
           console.log(`[Antenna ${id}] Scheduling threat signal...`);
 
@@ -78,14 +78,26 @@ export default function Antenna({
               console.log(`[Antenna ${id}] Jammed during emission! Signal blocked.`);
               return;
             }
-            socket.emit("unit-signal", emitData);
-            console.log(`[Antenna ${id}] ✅ Emitted threat-detected:`, emitData);
-          }, 3000);
+            const signalData = {
+  from: { x, y },
+  to: CENTRAL_AI_POSITION,
+  color: "red", 
+  source: "antenna",
+  type: "relay-to-c2",
+  payload,
+};
+             if (emitSignal) {
+              emitSignal(signalData);
+            }
+            socket.emit("unit-signal", signalData);
+            socket.emit("relay-to-c2", payload); 
+console.log(`[Antenna ${id}] ✅ Emitted relay-to-c2:`, payload);
+          }, 1000);
         }
       }
     };
 
-    socket.on("relay-to-antenna", handleRadarSignal);
+    socket.on("unit-signal", handleRadarSignal);
     return () => socket.off("relay-to-antenna", handleRadarSignal);
   }, [x, y]);
 

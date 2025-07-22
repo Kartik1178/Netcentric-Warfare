@@ -12,7 +12,12 @@ const missileSchema = new mongoose.Schema({
   Guidance_System: String,// Active Radar, Inertial, etc.
   Year_Introduced: Number,// e.g., 2019
   Warhead_Type: String,   // Conventional, Nuclear, etc.
-  Notes: String           // Additional notes
+  Notes: String,
+              rfSignature: {
+    type: String,
+    enum: ['GPS', 'RF', 'None'],
+    default: 'None',
+  },// Additional notes
 });
 
 export const Missile = mongoose.model("Missile", missileSchema);

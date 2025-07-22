@@ -11,8 +11,7 @@ const app = express();
 app.use(cors());
 app.use(express.json());
 
-// 2️⃣ MongoDB connection using mongoose
-await connectToMongo();  // Mongoose handles models internally — no getDb() needed!
+await connectToMongo();  
 
 // 3️⃣ API routes
 app.use(missileRoutes);
@@ -41,6 +40,10 @@ io.on("connection", (socket) => {
     console.log(`📡 ${data.source} sent signal: ${data.type}`, data.payload);
     io.emit("unit-signal", data);
   });
+socket.on("relay-to-c2", (missileData) => {
+  console.log(`[Backend] Received relay-to-c2 from Antenna`, missileData);
+  io.emit("relay-to-c2", missileData);
+});
 
   socket.on("jammer-broadcast", (data) => {
     console.log("📡 Jammer broadcast:", data);
@@ -50,6 +53,18 @@ io.on("connection", (socket) => {
   socket.on("disconnect", () => {
     console.log("❌ Client disconnected:", socket.id);
   });
+socket.on("command-launch", ({ missile, launcherId }) => {
+  console.log(`🚀 Central AI command: Launch interceptor from ${launcherId} for missile ${missile.id}`);
+  io.emit("launch-interceptor", { missile, launcherId });
+});
+
+socket.on("command-jam", ({ missile, jammerId }) => {
+  console.log(`🛰️ Central AI command: Activate jammer ${jammerId} for missile ${missile.id}`);
+  io.emit("activate-jammer", { missile, jammerId });
+});
+
+
+
 });
 
 // 5️⃣ Start server
