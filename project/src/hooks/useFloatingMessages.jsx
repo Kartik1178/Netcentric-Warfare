@@ -5,7 +5,7 @@ export default function useFloatingMessages() {
 
   const showMessage = useCallback((x, y, text, duration = 2, source = "global") => {
     const id = Date.now() + Math.random();
-    const newMessage = { id, x, y, text, duration,source};
+    const newMessage = { id, x, y, text, duration };
     setMessages((prev) => [...prev, newMessage]);
 
     // Remove after `duration` seconds

@@ -8,6 +8,7 @@ import { SimulationLog } from './components/SimulationLog.jsx';
 import { MissileParameterModal } from './components/MissileParameterModal.jsx';
 import { SDRProvider } from './hooks/SDRContext.jsx';
 import { JammerParameterModal } from './components/MapSimulatuion/JammerParameterModal.jsx';
+import { useCentralAI } from './hooks/useCentralAI.jsx';
 function App() {
   const [selectedThreat, setSelectedThreat] = useState(null);
     const [selectedJammer, setSelectedJammer] = useState(null);
