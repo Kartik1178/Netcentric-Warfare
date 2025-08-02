@@ -8,7 +8,9 @@ import { useCentralAI } from "../hooks/useCentralAI";
 import useFloatingMessages from "../hooks/useFloatingMessages";
 import { useLeafletToKonvaTransform } from "../hooks/useLeafletToKonvaTransform";
 import { useSmoothPositions } from "../hooks/useSmoothPositions";
-import { transparentIcon } from "../utils/transparentIcon";
+
+import { getStyledBaseIcon } from "../utils/transparentIcon";
+import { Marker } from "react-leaflet";
 export default function TerritoryMap({
   onLogsUpdate,
   newMissile,
@@ -170,6 +172,18 @@ useEffect(() => {
           ))}
         </select>
       </div>
+{mapInstance &&
+  BASES.map((base) => (
+    <Marker
+      key={base.id}
+      position={base.coords}  // [lat, lng]
+      icon={getStyledBaseIcon(base, focusMode && selectedBaseId === base.id)}
+      eventHandlers={{
+        click: () => handleBaseClick(base),
+      }}
+    />
+  ))}
+
 
       {/* 🎨 Konva Canvas */}
       <GridCanvas
@@ -192,13 +206,7 @@ useEffect(() => {
         center={center}
         selectedBaseId={selectedBaseId}
         floatingMessages={floatingMessages}
-        onBaseClick={(baseId) => {
-          const base = BASES.find((b) => b.id === baseId);
-          if (!base || !mapInstance) return;
-          setFocusMode(true);
-          setSelectedBaseId(baseId);
- mapInstance.flyTo(base.coords, 12, { animate: true, duration: 1.5 }); 
-        }}
+       onBaseClick={() => {}} 
       />
     </div>
   );

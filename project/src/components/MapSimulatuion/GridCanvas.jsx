@@ -134,23 +134,7 @@ export default function GridCanvas({
           )
         )}
 
-        {/* 🔹 Base Markers */}
-        {Object.entries(baseZones).map(([baseId, basePos]) => {
-          if (!basePos) return null;
-          const baseData = BASES.find((b) => b.id === baseId);
-          if (!baseData) return null;
 
-          return (
-            <BaseMarker
-              key={baseId}
-              baseId={baseId}
-              basePos={basePos}
-              type={baseData.type}
-              onClick={onBaseClick}
-              selected={focusMode && selectedBaseId === baseId}
-            />
-          );
-        })}
 
         {/* 🔹 Render Units only if zoomed in */}
         {Object.entries(baseZones).map(([baseId, basePos]) => {

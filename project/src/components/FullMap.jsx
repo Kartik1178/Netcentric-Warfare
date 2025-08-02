@@ -83,10 +83,8 @@ export default function FullMap({ onLogsUpdate, newMissile, newJammer }) {
         />
         <MapStateUpdater setZoom={setZoom} setCenter={setCenter} />
         <MapReadySetter onMapReady={setMapInstance} />
-      </MapContainer>
 
-      {/* ✅ TerritoryMap renders as soon as map is available */}
-      {mapInstance && (
+        {/* ✅ TerritoryMap now lives inside MapContainer */}
         <TerritoryMap
           mapInstance={mapInstance}
           mapSize={mapSize}
@@ -98,7 +96,7 @@ export default function FullMap({ onLogsUpdate, newMissile, newJammer }) {
           newMissile={newMissile}
           newJammer={newJammer}
         />
-      )}
+      </MapContainer>
     </div>
   );
 }
