@@ -7,7 +7,8 @@ import { BASES } from "../constants/baseData";
 import { useCentralAI } from "../hooks/useCentralAI";
 import useFloatingMessages from "../hooks/useFloatingMessages";
 import { useLeafletToKonvaTransform } from "../hooks/useLeafletToKonvaTransform";
-
+import { useSmoothPositions } from "../hooks/useSmoothPositions";
+import { transparentIcon } from "../utils/transparentIcon";
 export default function TerritoryMap({
   onLogsUpdate,
   newMissile,
@@ -37,7 +38,13 @@ export default function TerritoryMap({
   const [explosions, setExplosions] = useState([]);
   const [selectedBaseId, setSelectedBaseId] = useState(null);
   const spawnedMissiles = useRef(new Set());
-
+const handleBaseClick = (base) => {
+    setFocusMode(true);
+    setSelectedBaseId(base.id);
+    if (mapInstance) {
+      mapInstance.flyTo(base.coords, 12, { animate: true, duration: 1.5 });
+    }
+  };
   // ✅ Debug: Check mount
   useEffect(() => {
     console.log("🔹 TerritoryMap Mounted", {
@@ -134,7 +141,7 @@ useEffect(() => {
             obj.type === "interceptor"
         )
       : globalObjects;
-
+ const smoothBasePositions = useSmoothPositions(pixelPositions, 300);
   return (
     <div
       className="absolute inset-0 w-full h-full z-[1000]"
@@ -180,7 +187,7 @@ useEffect(() => {
         setCurrentFrequency={setCurrentFrequency}
         availableFrequencies={availableFrequencies}
         focusMode={focusMode}
-        baseZones={pixelPositions}
+           baseZones={smoothBasePositions}
         zoom={konvaZoom}
         center={center}
         selectedBaseId={selectedBaseId}
@@ -190,7 +197,7 @@ useEffect(() => {
           if (!base || !mapInstance) return;
           setFocusMode(true);
           setSelectedBaseId(baseId);
-          mapInstance.setView(base.coords, 12, { animate: true });
+ mapInstance.flyTo(base.coords, 12, { animate: true, duration: 1.5 }); 
         }}
       />
     </div>
