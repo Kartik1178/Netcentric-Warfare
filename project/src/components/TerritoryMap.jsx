@@ -8,14 +8,13 @@ import { useCentralAI } from "../hooks/useCentralAI";
 import useFloatingMessages from "../hooks/useFloatingMessages";
 import { useLeafletToKonvaTransform } from "../hooks/useLeafletToKonvaTransform";
 import { useSmoothPositions } from "../hooks/useSmoothPositions";
-
 import { getStyledBaseIcon } from "../utils/transparentIcon";
+import { useSubBaseUnits } from "../hooks/useSubBaseUnits";
 import { Marker } from "react-leaflet";
 
 export default function TerritoryMap({
   onLogsUpdate,
   newMissile,
-  newJammer,
   zoom,
   center,
   mapInstance,
@@ -24,13 +23,7 @@ export default function TerritoryMap({
   setFocusMode,
 }) {
   // ✅ SDR Context
-  const {
-    jammerReports,
-    setJammerReports,
-    currentFrequency,
-    setCurrentFrequency,
-    availableFrequencies,
-  } = useSDR();
+  const { jammerReports, setJammerReports, currentFrequency, setCurrentFrequency, availableFrequencies } = useSDR();
 
   // ✅ Local States
   const [floatingMessages, showMessage] = useFloatingMessages();
@@ -39,15 +32,6 @@ export default function TerritoryMap({
   const [explosions, setExplosions] = useState([]);
   const [selectedBaseId, setSelectedBaseId] = useState(null);
   const spawnedMissiles = useRef(new Set());
-
-  // ✅ Marker Click → Focus on Base
-  const handleBaseClick = (base) => {
-    setFocusMode(true);
-    setSelectedBaseId(base.id);
-    if (mapInstance) {
-      mapInstance.flyTo(base.coords, 15, { animate: true, duration: 1.5 });
-    }
-  };
 
   // ✅ Convert lat/lng → Konva pixel positions
   const { pixelPositions, zoom: konvaZoom } = useLeafletToKonvaTransform({
@@ -59,47 +43,47 @@ export default function TerritoryMap({
   // ✅ Smooth positions for animation
   const smoothBasePositions = useSmoothPositions(pixelPositions, 300);
 
-// 🔹 Utility: Generate units for a base
-const generateUnitsForBase = (baseId) => {
-  const pos = pixelPositions[baseId];
-  if (!pos) return [];
+  // ✅ Generate Units for all sub-bases
+  const generateUnitsForBase = (baseId) => {
+    const baseData = BASES.find((b) => b.id === baseId);
+    if (!baseData) return [];
 
-  // ✅ Invert logic: higher zoom → larger spacing
-  const spacing = konvaZoom >= 15 
-    ? 300 
-    : konvaZoom >= 13 
-    ? 200 
-    : 120;
+    // Each base has 4 sub-bases
+    return Array.from({ length: 4 }).flatMap((_, i) => {
+      const subBaseId = `${baseId}-sub${i + 1}`;
+      const localUnits = generateBaseUnits(subBaseId, baseData.type, 60);
+      // Store original localX/localY for scaling
+      return localUnits.map((u) => ({
+        ...u,
+        localX: u.x,
+        localY: u.y,
+        x: u.x,
+        y: u.y,
+      }));
+    });
+  };
 
-  const baseData = BASES.find((b) => b.id === baseId);
-  const baseWithPos = { ...baseData, position: pos };
+  // ✅ Marker Click → Focus on Base
+  const handleBaseClick = (base) => {
+    setFocusMode(true);
+    setSelectedBaseId(base.id);
+    if (mapInstance) {
+      mapInstance.flyTo(base.coords, 15, { animate: true, duration: 1.5 });
+    }
+  };
 
-  return generateBaseUnits(baseWithPos, spacing).map((u) => ({
-    ...u,
-    baseId: baseId,
-  }));
-};
-
-
-  // 1️⃣ Initialize Base Units (Overview or Focus)
+  // 1️⃣ Initialize Base Units
   useEffect(() => {
     if (!pixelPositions || Object.keys(pixelPositions).length === 0) return;
 
-    if (focusMode && selectedBaseId) {
-      // Only generate selected base units
-      const selectedUnits = generateUnitsForBase(selectedBaseId);
-      setGlobalObjects((prev) => [
-        ...prev.filter((o) => o.type === "missile" || o.type === "interceptor"),
-        ...selectedUnits,
-      ]);
-    } else {
-      // Overview → All bases visible
-      const allUnits = BASES.flatMap((base) => generateUnitsForBase(base.id));
-      setGlobalObjects((prev) => [
-        ...prev.filter((o) => o.type === "missile" || o.type === "interceptor"),
-        ...allUnits,
-      ]);
-    }
+    const allUnits = focusMode && selectedBaseId
+      ? generateUnitsForBase(selectedBaseId)
+      : BASES.flatMap((base) => generateUnitsForBase(base.id));
+
+    setGlobalObjects((prev) => [
+      ...prev.filter((o) => o.type === "missile" || o.type === "interceptor"),
+      ...allUnits,
+    ]);
   }, [pixelPositions, konvaZoom, focusMode, selectedBaseId]);
 
   // 2️⃣ Handle New Missile Spawn
@@ -143,17 +127,17 @@ const generateUnitsForBase = (baseId) => {
     },
     (signal) => {
       socket.emit("unit-signal", signal);
-      console.log("📡 CentralAI emitted signal to unit:", signal);
     },
     showMessage
   );
 
-  // 4️⃣ Determine visible objects & base zones
+  // 4️⃣ Filter visible objects for focus mode
   const visibleObjects =
     focusMode && selectedBaseId
       ? globalObjects.filter(
           (obj) =>
             obj.baseId === selectedBaseId ||
+            obj.baseId?.startsWith(`${selectedBaseId}-sub`) ||
             obj.type === "missile" ||
             obj.type === "interceptor"
         )
@@ -164,11 +148,12 @@ const generateUnitsForBase = (baseId) => {
       ? { [selectedBaseId]: smoothBasePositions[selectedBaseId] }
       : smoothBasePositions;
 
+  // ✅ Scale sub-base units based on zoom
+  const baseUnitsLocal = visibleObjects.filter((o) => o.type !== "missile" && o.type !== "interceptor");
+  const scaledBaseUnits = useSubBaseUnits(baseUnitsLocal, konvaZoom);
+
   return (
-    <div
-      className="absolute inset-0 w-full h-full z-[1000]"
-      style={{ pointerEvents: focusMode ? "auto" : "none" }}
-    >
+    <div className="absolute inset-0 w-full h-full z-[1000]" style={{ pointerEvents: focusMode ? "auto" : "none" }}>
       {/* 🎛 Focus Controls */}
       <div className="absolute top-4 left-4 z-50 p-2 bg-white rounded shadow pointer-events-auto">
         <button
@@ -197,11 +182,9 @@ const generateUnitsForBase = (baseId) => {
         BASES.map((base) => (
           <Marker
             key={base.id}
-            position={base.coords} // [lat, lng]
+            position={base.coords}
             icon={getStyledBaseIcon(base, focusMode && selectedBaseId === base.id)}
-            eventHandlers={{
-              click: () => handleBaseClick(base),
-            }}
+            eventHandlers={{ click: () => handleBaseClick(base) }}
           />
         ))}
 
@@ -211,17 +194,19 @@ const generateUnitsForBase = (baseId) => {
         height={mapSize.height}
         explosions={explosions}
         setExplosions={setExplosions}
-        objects={visibleObjects}
+        objects={[
+          ...scaledBaseUnits,
+          ...visibleObjects.filter((o) => o.type === "missile" || o.type === "interceptor"),
+        ]}
         incomingSignals={incomingSignals}
         setIncomingSignals={setIncomingSignals}
         jammerReports={jammerReports}
-        onLaunchInterceptor={() => {}}
         setJammerReports={setJammerReports}
         currentFrequency={currentFrequency}
         setCurrentFrequency={setCurrentFrequency}
         availableFrequencies={availableFrequencies}
         focusMode={focusMode}
-        baseZones={focusBaseZones} // ✅ Only show focused base zones
+        baseZones={focusBaseZones}
         zoom={konvaZoom}
         center={center}
         selectedBaseId={selectedBaseId}

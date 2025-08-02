@@ -9,9 +9,9 @@ export default function Radar({
   id,
   x,
   y,
-  baseid,
+  baseId, // ✅ Use camelCase consistently
   radius = 20,
-  objects,
+  objects = [], // ✅ Default empty array to prevent undefined
   jammerReports,
   setJammerReports,
   currentFrequency,
@@ -21,20 +21,22 @@ export default function Radar({
   const [image] = useImage("/satellite-dish.png");
   const detectedMissiles = useRef(new Set());
   const latestObjects = useRef(objects);
-const antenna = latestObjects.current.find(
-  (obj) => obj.type === "antenna" && obj.baseid === baseid
-);
-
   const [isJammed, setIsJammed] = useState(false);
   const isJammedRef = useRef(false);
   const jammedUntil = useRef(0);
+  const previousJammedState = useRef(null);
 
-  // Update object ref on change
+  // ✅ Always update objects reference
   useEffect(() => {
     latestObjects.current = objects;
   }, [objects]);
 
-  // Cognitive Radio hook
+  // ✅ Find the antenna in the same base safely
+  const antenna = latestObjects.current?.find(
+    (obj) => obj.type === "antenna" && obj.baseId === baseId
+  );
+
+  // ✅ Cognitive Radio
   useCognitiveRadio({
     id,
     jammerReports,
@@ -43,12 +45,12 @@ const antenna = latestObjects.current.find(
     setCurrentFrequency,
   });
 
-  // Update jammed ref
+  // ✅ Update jammed ref
   useEffect(() => {
     isJammedRef.current = isJammed;
   }, [isJammed]);
 
-  // Listen for frequency change
+  // ✅ Listen for frequency change
   useEffect(() => {
     const handleFrequencyChange = (data) => {
       if (data.unitId !== id) {
@@ -59,34 +61,30 @@ const antenna = latestObjects.current.find(
     return () => socket.off("frequency-change", handleFrequencyChange);
   }, [id]);
 
-  // Jammer detection
-const previousJammedState = useRef(null);
+  // ✅ Jammer Detection
+  useJammerDetection({
+    id,
+    x,
+    y,
+    myFrequency: currentFrequency,
+    jammerHandler: (isAffected, jammer) => {
+      const now = Date.now();
+      if (isAffected) jammedUntil.current = now + 1000;
 
-useJammerDetection({
-  id,
-  x,
-  y,
-  myFrequency: currentFrequency,
-  jammerHandler: (isAffected, jammer) => {
-    const now = Date.now();
-    if (isAffected) jammedUntil.current = now + 1000;
+      const stillJammed = now < jammedUntil.current;
+      setIsJammed(stillJammed);
 
-    const stillJammed = now < jammedUntil.current;
-    setIsJammed(stillJammed);
+      if (previousJammedState.current !== stillJammed) {
+        console.log(
+          `[Radar ${id}] Jammed by ${jammer.id}? ${isAffected} → Still jammed? ${stillJammed}`
+        );
+        previousJammedState.current = stillJammed;
+      }
+    },
+    setJammerReports,
+  });
 
-    // Only log on change
-    if (previousJammedState.current !== stillJammed) {
-      console.log(
-        `[Radar ${id}] Jammed by ${jammer.id}? ${isAffected} → Still jammed? ${stillJammed}`
-      );
-      previousJammedState.current = stillJammed;
-    }
-  },
-  setJammerReports,
-});
-
-
-  // Missile detection loop
+  // ✅ Missile detection loop
   useEffect(() => {
     const detectionRadius = 200;
 
@@ -96,8 +94,7 @@ useJammerDetection({
         return;
       }
 
-      const currentObjects = latestObjects.current;
-
+      const currentObjects = latestObjects.current || [];
       const threats = currentObjects.filter((obj) => {
         if (obj.type !== "missile") return false;
         const dx = obj.x - x;
@@ -111,33 +108,34 @@ useJammerDetection({
           const dx = missile.targetX - missile.x;
           const dy = missile.targetY - missile.y;
           const distance = Math.sqrt(dx * dx + dy * dy);
+          if (distance === 0) return;
 
-          if (distance === 0) return; // avoid div by zero
+          const vx = (dx / distance) * missile.speed;
+          const vy = (dy / distance) * missile.speed;
 
-        
-let vx = 0, vy = 0;
-if (distance > 0) {
-  vx = (dx / distance) * missile.speed;
-  vy = (dy / distance) * missile.speed;
-}
+          console.log(
+            `[Radar ${id}] Missile ${missile.id}: vx=${vx.toFixed(
+              2
+            )}, vy=${vy.toFixed(2)}`
+          );
 
-          console.log(`[Radar ${id}] Missile ${missile.id}: vx=${vx.toFixed(2)}, vy=${vy.toFixed(2)}`);
-if (antenna) {
-  socket.emit("unit-signal", {
-    source: `${id}`,
-    type: "relay-to-antenna",
-    from: { x, y },
-    to: { x: antenna.x, y: antenna.y }, // ✅ Dynamic antenna position
-    payload: {
-      id: missile.id,
-      currentX: Math.ceil(missile.x * 100) / 100,
-      currentY: Math.ceil(missile.y * 100) / 100,
-      vx: parseFloat(vx.toFixed(2)),
-      vy: parseFloat(vy.toFixed(2)),
-      targetAntennaId: antenna?.id,
-    },
-  });
-}
+          // ✅ Emit to antenna if available
+          if (antenna) {
+            socket.emit("unit-signal", {
+              source: `${id}`,
+              type: "relay-to-antenna",
+              from: { x, y },
+              to: { x: antenna.x, y: antenna.y },
+              payload: {
+                id: missile.id,
+                currentX: Math.ceil(missile.x * 100) / 100,
+                currentY: Math.ceil(missile.y * 100) / 100,
+                vx: parseFloat(vx.toFixed(2)),
+                vy: parseFloat(vy.toFixed(2)),
+                targetAntennaId: antenna.id,
+              },
+            });
+          }
 
           detectedMissiles.current.add(missile.id);
         }
