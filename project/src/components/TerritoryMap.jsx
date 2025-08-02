@@ -11,6 +11,7 @@ import { useSmoothPositions } from "../hooks/useSmoothPositions";
 
 import { getStyledBaseIcon } from "../utils/transparentIcon";
 import { Marker } from "react-leaflet";
+
 export default function TerritoryMap({
   onLogsUpdate,
   newMissile,
@@ -31,8 +32,6 @@ export default function TerritoryMap({
     availableFrequencies,
   } = useSDR();
 
-  console.log("🟢 TerritoryMap Rendered");
-
   // ✅ Local States
   const [floatingMessages, showMessage] = useFloatingMessages();
   const [globalObjects, setGlobalObjects] = useState([]);
@@ -40,52 +39,68 @@ export default function TerritoryMap({
   const [explosions, setExplosions] = useState([]);
   const [selectedBaseId, setSelectedBaseId] = useState(null);
   const spawnedMissiles = useRef(new Set());
-const handleBaseClick = (base) => {
+
+  // ✅ Marker Click → Focus on Base
+  const handleBaseClick = (base) => {
     setFocusMode(true);
     setSelectedBaseId(base.id);
     if (mapInstance) {
-      mapInstance.flyTo(base.coords, 12, { animate: true, duration: 1.5 });
+      mapInstance.flyTo(base.coords, 15, { animate: true, duration: 1.5 });
     }
   };
-  // ✅ Debug: Check mount
-  useEffect(() => {
-    console.log("🔹 TerritoryMap Mounted", {
-      hasMap: !!mapInstance,
-      size: mapSize,
-    });
-  }, [mapInstance, mapSize]);
-useEffect(() => {
-  if (mapInstance) {
-    console.log("🟢 MapInstance now available → Trigger pixelPositions recalculation");
-  }
-}, [mapInstance]);
 
-  // ✅ Convert lat/lng to Konva pixel positions
+  // ✅ Convert lat/lng → Konva pixel positions
   const { pixelPositions, zoom: konvaZoom } = useLeafletToKonvaTransform({
     mapInstance,
     baseData: BASES,
     mapSize,
   });
 
-  // 1️⃣ Initialize Base Units
+  // ✅ Smooth positions for animation
+  const smoothBasePositions = useSmoothPositions(pixelPositions, 300);
+
+// 🔹 Utility: Generate units for a base
+const generateUnitsForBase = (baseId) => {
+  const pos = pixelPositions[baseId];
+  if (!pos) return [];
+
+  // ✅ Invert logic: higher zoom → larger spacing
+  const spacing = konvaZoom >= 15 
+    ? 300 
+    : konvaZoom >= 13 
+    ? 200 
+    : 120;
+
+  const baseData = BASES.find((b) => b.id === baseId);
+  const baseWithPos = { ...baseData, position: pos };
+
+  return generateBaseUnits(baseWithPos, spacing).map((u) => ({
+    ...u,
+    baseId: baseId,
+  }));
+};
+
+
+  // 1️⃣ Initialize Base Units (Overview or Focus)
   useEffect(() => {
-    if (!pixelPositions || Object.keys(pixelPositions).length === 0) {
-      console.log("⏳ Waiting for pixelPositions...");
-      return;
+    if (!pixelPositions || Object.keys(pixelPositions).length === 0) return;
+
+    if (focusMode && selectedBaseId) {
+      // Only generate selected base units
+      const selectedUnits = generateUnitsForBase(selectedBaseId);
+      setGlobalObjects((prev) => [
+        ...prev.filter((o) => o.type === "missile" || o.type === "interceptor"),
+        ...selectedUnits,
+      ]);
+    } else {
+      // Overview → All bases visible
+      const allUnits = BASES.flatMap((base) => generateUnitsForBase(base.id));
+      setGlobalObjects((prev) => [
+        ...prev.filter((o) => o.type === "missile" || o.type === "interceptor"),
+        ...allUnits,
+      ]);
     }
-
-    console.log("✅ Initializing base units with positions:", pixelPositions);
-
-    const allUnits = BASES.flatMap((base) => {
-      const pos = pixelPositions[base.id];
-      if (!pos) return [];
-      const baseWithPos = { ...base, position: pos };
-      const baseUnits = generateBaseUnits(baseWithPos, 300);
-      return baseUnits.map((u) => ({ ...u, baseId: base.id }));
-    });
-
-    setGlobalObjects(allUnits);
-  }, [pixelPositions]);
+  }, [pixelPositions, konvaZoom, focusMode, selectedBaseId]);
 
   // 2️⃣ Handle New Missile Spawn
   useEffect(() => {
@@ -133,7 +148,7 @@ useEffect(() => {
     showMessage
   );
 
-  // 4️⃣ Determine visible objects
+  // 4️⃣ Determine visible objects & base zones
   const visibleObjects =
     focusMode && selectedBaseId
       ? globalObjects.filter(
@@ -143,11 +158,15 @@ useEffect(() => {
             obj.type === "interceptor"
         )
       : globalObjects;
- const smoothBasePositions = useSmoothPositions(pixelPositions, 300);
+
+  const focusBaseZones =
+    focusMode && selectedBaseId
+      ? { [selectedBaseId]: smoothBasePositions[selectedBaseId] }
+      : smoothBasePositions;
+
   return (
     <div
       className="absolute inset-0 w-full h-full z-[1000]"
-      // ✅ Map is draggable except over focus controls
       style={{ pointerEvents: focusMode ? "auto" : "none" }}
     >
       {/* 🎛 Focus Controls */}
@@ -172,18 +191,19 @@ useEffect(() => {
           ))}
         </select>
       </div>
-{mapInstance &&
-  BASES.map((base) => (
-    <Marker
-      key={base.id}
-      position={base.coords}  // [lat, lng]
-      icon={getStyledBaseIcon(base, focusMode && selectedBaseId === base.id)}
-      eventHandlers={{
-        click: () => handleBaseClick(base),
-      }}
-    />
-  ))}
 
+      {/* 🟢 Leaflet Base Markers */}
+      {mapInstance &&
+        BASES.map((base) => (
+          <Marker
+            key={base.id}
+            position={base.coords} // [lat, lng]
+            icon={getStyledBaseIcon(base, focusMode && selectedBaseId === base.id)}
+            eventHandlers={{
+              click: () => handleBaseClick(base),
+            }}
+          />
+        ))}
 
       {/* 🎨 Konva Canvas */}
       <GridCanvas
@@ -201,12 +221,12 @@ useEffect(() => {
         setCurrentFrequency={setCurrentFrequency}
         availableFrequencies={availableFrequencies}
         focusMode={focusMode}
-           baseZones={smoothBasePositions}
+        baseZones={focusBaseZones} // ✅ Only show focused base zones
         zoom={konvaZoom}
         center={center}
         selectedBaseId={selectedBaseId}
         floatingMessages={floatingMessages}
-       onBaseClick={() => {}} 
+        onBaseClick={() => {}}
       />
     </div>
   );

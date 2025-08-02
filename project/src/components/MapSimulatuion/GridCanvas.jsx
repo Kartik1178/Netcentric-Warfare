@@ -1,7 +1,6 @@
 import { useEffect, useRef } from "react";
 import { Stage, Layer, Group, Circle, Rect, Text, RegularPolygon, Line } from "react-konva";
 import Konva from "konva";
-
 import Missile from "./Missile";
 import { Interceptor } from "./Interceptor";
 import Explosion from "../Explosion";
@@ -10,6 +9,7 @@ import Antenna from "./AntennaUnit";
 import CentralAI from "./CentralAI";
 import DefenseJammer from "./DefenseJammer";
 import { BASES } from "../../constants/baseData";
+import Launcher from "./LauncherUnit";
 
 // 🔹 Base Colors by Type
 const baseColors = {
@@ -18,6 +18,66 @@ const baseColors = {
   Sea: "#00CED1",       // Cyan
   Submarine: "#8A2BE2", // Purple
 };
+function BaseGridBackground({ radius = 150, cellSize = 30 }) {
+  const lines = [];
+
+  // Vertical Lines
+  for (let x = -radius; x <= radius; x += cellSize) {
+    lines.push(
+      <Line
+        key={`v-${x}`}
+        points={[x, -radius, x, radius]}
+        stroke="rgba(0,255,255,0.3)" // brighter cyan
+        strokeWidth={1}
+      />
+    );
+  }
+
+  // Horizontal Lines
+  for (let y = -radius; y <= radius; y += cellSize) {
+    lines.push(
+      <Line
+        key={`h-${y}`}
+        points={[-radius, y, radius, y]} // correct horizontal orientation
+        stroke="rgba(0,255,255,0.3)"
+        strokeWidth={1}
+      />
+    );
+  }
+
+  return (
+    <Group>
+      {/* Semi-transparent dark base */}
+      <Rect
+        x={-radius}
+        y={-radius}
+        width={radius * 2}
+        height={radius * 2}
+        fill="rgba(0,20,30,0.4)" // dark cyan tint
+        cornerRadius={10}
+      />
+
+      {/* Grid Lines */}
+      {lines}
+
+      {/* Glowing Border */}
+      <Rect
+        x={-radius}
+        y={-radius}
+        width={radius * 2}
+        height={radius * 2}
+        stroke="rgba(0,255,255,0.7)"
+        strokeWidth={2}
+        dash={[12, 6]}
+        shadowColor="cyan"
+        shadowBlur={10}
+        shadowOpacity={0.6}
+        cornerRadius={10}
+      />
+    </Group>
+  );
+}
+
 
 function BaseMarker({ baseId, basePos, type, onClick, selected }) {
   const color = baseColors[type] || "gray";
@@ -143,9 +203,13 @@ export default function GridCanvas({
 
           const units = baseUnits.filter((unit) => unit.baseId === baseId);
           if (!showDetails) return null;
-
-          return (
+ const baseRadius = zoom >= 15 ? 180 : zoom >= 13 ? 140 : 100;
+  const cellSize = zoom >= 15 ? 25 : 30;        
+ return (
             <Group key={baseId} x={basePos.x} y={basePos.y}>
+           
+      <BaseGridBackground radius={baseRadius} cellSize={cellSize} />
+           
               <CentralAI x={0} y={-100} floatingMessages={floatingMessages} />
               {units.map((unit) => {
                 switch (unit.type) {
@@ -183,16 +247,29 @@ export default function GridCanvas({
                         }
                       />
                     );
-                  case "jammer":
-                    return (
-                      <DefenseJammer
-                        key={unit.id}
-                        id={unit.id}
-                        x={unit.x}
-                        y={unit.y}
-                        currentFrequency={currentFrequency}
-                      />
-                    );
+                  case "jammer": // ✅ Matches generateBaseUnits
+            return (
+              <DefenseJammer
+                key={unit.id}
+                id={unit.id}
+                x={unit.x}
+                y={unit.y}
+                currentFrequency={currentFrequency}
+              />
+            );
+          case "launcher": // ✅ NEW: Render launchers
+            return (
+              <Launcher
+                key={unit.id}
+                x={unit.x}
+                y={unit.y}
+                width={12}
+                height={12}
+                fill="orange"
+                offsetX={6}
+                offsetY={6}
+              />
+            );
                   default:
                     return null;
                 }
