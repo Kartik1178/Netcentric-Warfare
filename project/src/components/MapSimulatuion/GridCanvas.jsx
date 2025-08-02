@@ -1,200 +1,210 @@
-import React, { useEffect } from "react";
-import { Stage, Layer, Rect, Line, Text } from "react-konva";
+import { Stage, Layer, Group, Circle, Text } from "react-konva";
 import Missile from "./Missile";
-import Radar from "./RadarUnit";
-import Launcher from "./LauncherUnit";
-import Antenna from "./AntennaUnit";
 import { Interceptor } from "./Interceptor";
-import Jammer from "./JammerUnit";
-import SignalLayer from "./SignalLayer";
-import DefenseJammer from "./DefenseJammer";
 import Explosion from "../Explosion";
+import Radar from "./RadarUnit";
+import Antenna from "./AntennaUnit";
 import CentralAI from "./CentralAI";
-import useFloatingMessages from "../../hooks/useFloatingMessages";
-import FloatingMessage from "./FloatingMessage";
+import DefenseJammer from "./DefenseJammer";
+
 export default function GridCanvas({
-  objects = [],
-  incomingSignals = [],
+  width,
+  height,
+  explosions,
+  setExplosions,
+  objects,
+  incomingSignals,
   setIncomingSignals,
-  onLaunchInterceptor,
   jammerReports,
+  onLaunchInterceptor,
   setJammerReports,
   currentFrequency,
   setCurrentFrequency,
   availableFrequencies,
-   baseZones = [],
   focusMode,
+  baseZones,
+  zoom,
+  center,
   selectedBaseId,
-  explosions = [],
-
-  setExplosions,
+  floatingMessages = [],
+  onBaseClick,
 }) {
-  const MAP_WIDTH = 1000;
-  const MAP_HEIGHT = window.innerHeight * 0.9;
-const [floatingMessages, showMessage] = useFloatingMessages();
-  const CELL_SIZE = 25;
-  const BASE_SIZE = 300;
- useEffect(() => {
-    const interval = setInterval(() => {
-      const now = Date.now();
-      setIncomingSignals((prev) =>
-        prev.filter((signal) => now - signal.createdAt < 2000)
-      );
-    }, 500);
-    return () => clearInterval(interval);
-  }, [setIncomingSignals]);
+  const missiles = objects.filter((o) => o.type === "missile");
+  const interceptors = objects.filter((o) => o.type === "interceptor");
+  const baseUnits = objects.filter(
+    (o) => o.type !== "missile" && o.type !== "interceptor"
+  );
+console.log("🎯 Rendering Konva with baseZones:", baseZones);
+console.log("🟢 GridCanvas Rendered", { width, height, baseZones });
+
+  const showDetails = zoom >= 7; // show units only when zoomed in
 
   return (
-    <Stage width={MAP_WIDTH} height={MAP_HEIGHT}>
- <Layer>
-  {/* Background */}
-  <Rect x={0} y={0} width={MAP_WIDTH} height={MAP_HEIGHT} fill="#0a0a1f" />
-
-  {/* Grid lines */}
-  {Array.from({ length: Math.ceil(MAP_WIDTH / CELL_SIZE) }).map((_, i) => (
-    <Line
-      key={`v-${i}`}
-      points={[i * CELL_SIZE, 0, i * CELL_SIZE, MAP_HEIGHT]}
-      stroke="#2d2d2d"
-      strokeWidth={1}
-    />
-  ))}
-  {Array.from({ length: Math.ceil(MAP_HEIGHT / CELL_SIZE) }).map((_, i) => (
-    <Line
-      key={`h-${i}`}
-      points={[0, i * CELL_SIZE, MAP_WIDTH, i * CELL_SIZE]}
-      stroke="#2d2d2d"
-      strokeWidth={1}
-    />
-  ))}
-
-  {/* === BASE ZONES === */}
-  {baseZones.map((zone) => {
-    const isFocused = focusMode && zone.id === selectedBaseId;
-    const fillColor = isFocused
-      ? "rgba(0, 255, 0, 0.2)"
-      : focusMode
-      ? "rgba(255, 255, 255, 0.05)"
-      : "rgba(0, 255, 0, 0.1)";
-
-    const borderColor = isFocused ? "#00ff00" : "#666";
-
-    return (
-      <React.Fragment key={zone.id}>
-        <Rect
-          x={zone.position.x - BASE_SIZE / 2}
-          y={zone.position.y - BASE_SIZE / 2}
-          width={BASE_SIZE}
-          height={BASE_SIZE}
-          fill={fillColor}
-          stroke={borderColor}
-          strokeWidth={2}
-        />
-        <Text
-          text={zone.id}
-          x={zone.position.x - BASE_SIZE / 2 + 10}
-          y={zone.position.y - BASE_SIZE / 2 + 10}
-          fontSize={16}
-          fill={isFocused ? "#00ff00" : "#999"}
-        />
-      </React.Fragment>
-    );
-  })}
-
-  {/* === Signal lines === */}
-  <SignalLayer signals={incomingSignals} />
-
-  {/* === Units EXCEPT missiles === */}
-  {objects
-    .filter((obj) => obj.type !== "missile")
-    .map((obj) => {
-      if (obj.type === "defense-jammer") {
-        return (
-          <DefenseJammer
-            key={obj.id}
-            id={obj.id}
-            baseid={obj.baseid}
-            x={obj.x}
-            y={obj.y}
-            jamRadius={150}
-            currentFrequency={"X-Band"}
-          />
-        );
-      }
-      if (obj.type === "interceptor")
-        return <Interceptor key={obj.id} {...obj} />;
-      if (obj.type === "radar")
-        return (
-          <Radar
-            key={obj.id}
-            {...obj}
-            objects={objects}
-            jammerReports={jammerReports}
-            setJammerReports={setJammerReports}
-            currentFrequency={currentFrequency}
-            setCurrentFrequency={setCurrentFrequency}
-            availableFrequencies={availableFrequencies}
-          />
-        );
-      if (obj.type === "launcher")
-        return (
-          <Launcher
-            key={obj.id}
-            {...obj}
-            onLaunchInterceptor={onLaunchInterceptor}
-          />
-        );
-      if (obj.type === "antenna")
-        return (
-          <Antenna
-            key={obj.id}
-            {...obj}
-            jammerReports={jammerReports}
-            setJammerReports={setJammerReports}
-            currentFrequency={currentFrequency}
-            setCurrentFrequency={setCurrentFrequency}
-            availableFrequencies={availableFrequencies}
-  />
-        );
-      if (obj.type === "jammer")
-        return <Jammer key={obj.id} {...obj} />;
-      
-
-      return null;
-    })}
-
-  {/* === Missiles on top === */}
-  {objects
-    .filter((obj) => obj.type === "missile")
-    .map((obj) => (
-      <Missile
-        key={obj.id}
-        x={obj.x}
-        y={obj.y}
-        targetX={obj.targetX}
-        targetY={obj.targetY}
-        speed={obj.speed}
-      />
-    ))}
-<CentralAI x={MAP_WIDTH / 2 - 50} y={10} />
-
-{/* Floating messages — all of them handled here */}
-{floatingMessages.map((msg) => (
-  <FloatingMessage key={msg.id} {...msg} />
-))}
-
-  {explosions.map((exp) => (
-    <Explosion
-      key={exp.id}
-      x={exp.x}
-      y={exp.y}
-      onAnimationEnd={() => {
-        setExplosions((prev) => prev.filter((e) => e.id !== exp.id));
+    <Stage
+      width={width}
+      height={height}
+      style={{
+        position: "absolute",
+        top: 0,
+        left: 0,
+        zIndex: 1000,
+        pointerEvents: focusMode ? "auto" : "none",
       }}
-    />
-  ))}
-</Layer>
+    >
+      <Layer>
+        {/* 🔹 Debug Layer: Always show base red dots */}
+        {Object.entries(baseZones).map(([baseId, basePos]) => {
+          if (!basePos) return null;
+          return (
+            <Circle
+              key={`debug-${baseId}`}
+              x={basePos.x}
+              y={basePos.y}
+              radius={8}
+              fill="red"
+              opacity={0.8}
+            />
+          );
+        })}
 
+        {/* 🔹 Render Bases and Units */}
+        {Object.entries(baseZones).map(([baseId, basePos]) => {
+  if (!basePos) return null;
+  return (
+    <Group key={`debug-${baseId}`}>
+      <Circle x={basePos.x} y={basePos.y} radius={8} fill="red" opacity={0.8} />
+      <Text
+        x={basePos.x + 10}
+        y={basePos.y - 10}
+        text={`${baseId}\n(${Math.round(basePos.x)}, ${Math.round(basePos.y)})`}
+        fontSize={12}
+        fill="black"
+        stroke="white"
+        strokeWidth={0.5}
+      />
+    </Group>
+  );
+})}
+
+        {Object.entries(baseZones).map(([baseId, basePos]) => {
+          if (focusMode && selectedBaseId && baseId !== selectedBaseId) return null;
+          if (!basePos) return null;
+
+          const units = baseUnits.filter((unit) => unit.baseId === baseId);
+
+          return (
+            <Group
+              key={baseId}
+              x={basePos.x}
+              y={basePos.y}
+              listening={true}
+              onMouseEnter={(e) =>
+                (e.target.getStage().container().style.cursor = "pointer")
+              }
+              onMouseLeave={(e) =>
+                (e.target.getStage().container().style.cursor = "default")
+              }
+              onClick={() => onBaseClick?.(baseId)}
+            >
+              {/* ✅ Invisible larger circle for easier clicks */}
+              <Circle
+                radius={25}
+                fillEnabled={false}
+                strokeEnabled={false}
+              />
+
+              {/* 🟠 Visible Base Marker */}
+              <Circle radius={15} fill="orange" stroke="black" strokeWidth={2} />
+              <Text
+                text={baseId}
+                y={20}
+                offsetX={baseId.length * 3}
+                fontSize={14}
+                fill="black"
+              />
+
+              {showDetails && (
+                <>
+                  <CentralAI x={0} y={-100} floatingMessages={floatingMessages} />
+                  {units.map((unit) => {
+                    switch (unit.type) {
+                      case "radar":
+                        return (
+                          <Radar
+                            key={unit.id}
+                            id={unit.id}
+                            baseid={unit.baseId}
+                            x={unit.x}
+                            y={unit.y}
+                            objects={objects}
+                            jammerReports={jammerReports}
+                            setJammerReports={setJammerReports}
+                            currentFrequency={currentFrequency}
+                            setCurrentFrequency={setCurrentFrequency}
+                            availableFrequencies={availableFrequencies}
+                          />
+                        );
+                      case "antenna":
+                        return (
+                          <Antenna
+                            key={unit.id}
+                            id={unit.id}
+                            baseid={unit.baseId}
+                            x={unit.x}
+                            y={unit.y}
+                            jammerReports={jammerReports}
+                            setJammerReports={setJammerReports}
+                            currentFrequency={currentFrequency}
+                            setCurrentFrequency={setCurrentFrequency}
+                            availableFrequencies={availableFrequencies}
+                            emitSignal={(signal) =>
+                              setIncomingSignals((prev) => [...prev, signal])
+                            }
+                          />
+                        );
+                      case "jammer":
+                        return (
+                          <DefenseJammer
+                            key={unit.id}
+                            id={unit.id}
+                            x={unit.x}
+                            y={unit.y}
+                            currentFrequency={currentFrequency}
+                          />
+                        );
+                      default:
+                        return null;
+                    }
+                  })}
+                </>
+              )}
+            </Group>
+          );
+        })}
+
+        {/* 🔹 Missiles */}
+        {missiles.map((missile) => (
+          <Missile key={missile.id} missile={missile} listening={false} />
+        ))}
+
+        {/* 🔹 Interceptors */}
+        {interceptors.map((interceptor) => (
+          <Interceptor key={interceptor.id} interceptor={interceptor} listening={false} />
+        ))}
+
+        {/* 🔹 Explosions */}
+        {explosions.map((explosion) => (
+          <Explosion
+            key={explosion.id}
+            x={explosion.x}
+            y={explosion.y}
+            onComplete={() =>
+              setExplosions((prev) => prev.filter((e) => e.id !== explosion.id))
+            }
+            listening={false}
+          />
+        ))}
+      </Layer>
     </Stage>
   );
 }

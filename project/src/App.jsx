@@ -3,12 +3,13 @@
 import React, { useState } from 'react';
 import { Header } from './components/Header.jsx';
 import { ThreatDashboard } from './components/ThreatDashboard.jsx';
-import { TerritoryMap } from './components/TerritoryMap.jsx';
+
 import { SimulationLog } from './components/SimulationLog.jsx';
 import { MissileParameterModal } from './components/MissileParameterModal.jsx';
 import { SDRProvider } from './hooks/SDRContext.jsx';
 import { JammerParameterModal } from './components/MapSimulatuion/JammerParameterModal.jsx';
 import { useCentralAI } from './hooks/useCentralAI.jsx';
+import FullMap from './components/FullMap.jsx';
 function App() {
   const [selectedThreat, setSelectedThreat] = useState(null);
     const [selectedJammer, setSelectedJammer] = useState(null);
@@ -33,9 +34,9 @@ const [newJammer, setNewJammer] = useState(null);
 
       <div className="flex-1 flex overflow-hidden">
          <ThreatDashboard onThreatSelect={handleThreatSelect} />
-        <div className="m-2">
+<div className="flex-1 relative m-2 overflow-hidden">
           <SDRProvider>
-          <TerritoryMap onLogsUpdate={handleLogUpdate} 
+          <FullMap onLogsUpdate={handleLogUpdate} 
           newMissile={newMissile} newJammer={newJammer}/>
         </SDRProvider>
         </div>

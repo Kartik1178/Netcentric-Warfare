@@ -1,92 +1,103 @@
-// components/FullMap.jsx
+import { useEffect, useState, useRef } from "react";
 import {
   MapContainer,
   TileLayer,
-  Marker,
-  Popup,
-  useMapEvents
-} from 'react-leaflet';
-import 'leaflet/dist/leaflet.css';
-import L from 'leaflet';
-import { useState } from 'react';
-import { BASES } from '../constants/baseData';
-import { useNearestBase } from '../hooks/useNearestBase';
-import TerritoryMap from './TerritoryMap';
+  useMap,
+  useMapEvents,
+} from "react-leaflet";
+import "leaflet/dist/leaflet.css";
+import TerritoryMap from "./TerritoryMap";
 
-// Configure marker icons
-delete L.Icon.Default.prototype._getIconUrl;
-L.Icon.Default.mergeOptions({
-  iconRetinaUrl: new URL('leaflet/dist/images/marker-icon-2x.png', import.meta.url).href,
-  iconUrl: new URL('leaflet/dist/images/marker-icon.png', import.meta.url).href,
-  shadowUrl: new URL('leaflet/dist/images/marker-shadow.png', import.meta.url).href,
-});
+// 🔁 Hook to get the map instance from inside the map
+function MapReadySetter({ onMapReady }) {
+  const map = useMap();
+  useEffect(() => {
+    onMapReady(map);
+    console.log("✅ MapReadySetter fired with map:", map);
+  }, [map]);
+  return null;
+}
 
-// Tracks zoom and center for zoom-based rendering logic
 function MapStateUpdater({ setZoom, setCenter }) {
   useMapEvents({
     zoomend: (e) => setZoom(e.target.getZoom()),
-    moveend: (e) => setCenter([e.target.getCenter().lat, e.target.getCenter().lng])
+    moveend: (e) => {
+      const c = e.target.getCenter();
+      setCenter([c.lat, c.lng]);
+    },
   });
   return null;
 }
 
-// Absolute overlay container for GridCanvas
-function OverlayOnBase({ children, base }) {
-  return (
-    <div
-      className="absolute z-10"
-      style={{
-        top: '50%',
-        left: '50%',
-        width: 1200,
-        height: 800,
-        transform: 'translate(-50%, -50%)'
-      }}
-    >
-      {children}
-    </div>
-  );
-}
-
-// Main component
 export default function FullMap({ onLogsUpdate, newMissile, newJammer }) {
   const [zoom, setZoom] = useState(5);
-  const [center, setCenter] = useState([28.6139, 77.2090]); // Start centered on Delhi
+  const [center, setCenter] = useState([28.6139, 77.209]); // Delhi
+  const [mapInstance, setMapInstance] = useState(null);
+  const [mapSize, setMapSize] = useState({
+    width: window.innerWidth,
+    height: window.innerHeight,
+  });
+  const [focusMode, setFocusMode] = useState(false);
 
-  const nearestBase = useNearestBase(center, zoom);
+  const containerRef = useRef(null);
+
+  // 🔹 Resize listener
+  useEffect(() => {
+    const resize = () => {
+      if (!containerRef.current) return;
+      const width = containerRef.current.clientWidth || window.innerWidth;
+      const height = containerRef.current.clientHeight || window.innerHeight;
+      console.log("📏 Container size updated:", width, height);
+      setMapSize({ width, height });
+    };
+
+    resize();
+    window.addEventListener("resize", resize);
+    return () => window.removeEventListener("resize", resize);
+  }, []);
+
+  // 🔁 Recalculate map size on container/map change
+  useEffect(() => {
+    if (mapInstance) {
+      mapInstance.invalidateSize();
+      setTimeout(() => mapInstance.invalidateSize(), 200);
+    }
+  }, [mapInstance, mapSize]);
+
+  console.log("🟢 FullMap Rendered Object");
+  console.log("🔹 mapInstance available?", !!mapInstance);
 
   return (
-    <div className="w-full h-full relative">
+    <div ref={containerRef} className="w-full h-screen relative">
       <MapContainer
+        style={{ width: "100%", height: "100%" }}
         center={center}
         zoom={zoom}
-        scrollWheelZoom={true}
-        className="absolute inset-0 z-40"
+        scrollWheelZoom
+        dragging
+        className="z-40"
       >
         <TileLayer
           url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
           attribution="© OpenStreetMap contributors"
         />
-
-        {/* Mark all defined bases */}
-        {BASES.map(base => (
-          <Marker key={base.id} position={base.coords}>
-            <Popup>{base.name}</Popup>
-          </Marker>
-        ))}
-
         <MapStateUpdater setZoom={setZoom} setCenter={setCenter} />
+        <MapReadySetter onMapReady={setMapInstance} />
       </MapContainer>
 
-      {nearestBase && (
-        <OverlayOnBase base={nearestBase}>
-         {/* <TerritoryMap
-            base={nearestBase}
-            onLogsUpdate={onLogsUpdate}
-            newMissile={newMissile}
-            newJammer={newJammer}
-          /> */}
-        </OverlayOnBase>
+      {/* ✅ TerritoryMap renders as soon as map is available */}
+      {mapInstance && (
+        <TerritoryMap
+          mapInstance={mapInstance}
+          mapSize={mapSize}
+          zoom={zoom}
+          center={center}
+          focusMode={focusMode}
+          setFocusMode={setFocusMode}
+          onLogsUpdate={onLogsUpdate}
+          newMissile={newMissile}
+          newJammer={newJammer}
+        />
       )}
     </div>
   );

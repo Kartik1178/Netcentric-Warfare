@@ -1,34 +1,37 @@
-import { useMap } from "react-leaflet";
+import { useEffect, useState } from 'react';
 
-function OverlayOnBase({ base, children }) {
-  const map = useMap();
-  const [pos, setPos] = useState({ x: 0, y: 0 });
+export default function OverlayOnBase({ map, base, children }) {
+  const [position, setPosition] = useState({ x: 0, y: 0 });
 
   useEffect(() => {
-    const updatePos = () => {
-      const latlngPoint = map.latLngToContainerPoint(base.coords);
-      setPos({ x: latlngPoint.x, y: latlngPoint.y });
+    if (!map || !base) return;
+
+    const updatePosition = () => {
+      const point = map.latLngToContainerPoint(base.coords);
+      setPosition({ x: point.x, y: point.y });
     };
 
-    updatePos();
-    map.on("move", updatePos);
-    map.on("zoom", updatePos);
+    updatePosition();
+    map.on('move zoom resize', updatePosition);
 
     return () => {
-      map.off("move", updatePos);
-      map.off("zoom", updatePos);
+      map.off('move zoom resize', updatePosition);
     };
-  }, [map, base.coords]);
+  }, [map, base]);
 
   return (
     <div
-      className="absolute pointer-events-none z-10"
+      className="absolute z-[9999] pointer-events-none"
       style={{
-        left: pos.x - 500, // half of TerritoryMap width
-        top: pos.y - 350,  // half of TerritoryMap height
+        left: position.x - 600, // center by half width
+        top: position.y - 400,  // center by half height
+        width: 1200,
+        height: 800,
       }}
     >
-      {children}
+      <div className="pointer-events-auto w-full h-full">
+        {children}
+      </div>
     </div>
   );
 }
