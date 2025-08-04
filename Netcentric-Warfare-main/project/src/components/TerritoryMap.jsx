@@ -13,61 +13,12 @@ import { useSubBaseUnits } from "../hooks/useSubBaseUnits";
 import { getStyledBaseIcon } from "../utils/transparentIcon";
 
 const LAUNCH_ZONES = [
-  {
-    id: "pakistan-north",
-    polygon: [
-      [35.0, 74.5],
-      [34.0, 74.0],
-      [33.5, 73.5],
-      [33.5, 74.5],
-    ],
-    color: "rgba(255,0,0,0.3)",
-  },
-  {
-    id: "pakistan-south",
-    polygon: [
-      [25.5, 67.5],
-      [25.0, 67.0],
-      [24.5, 67.0],
-      [24.5, 67.5],
-    ],
-    color: "rgba(255,50,50,0.3)",
-  },
-  {
-    id: "arabian-sea",
-    polygon: [
-      [22.0, 65.5],
-      [20.0, 65.5],
-      [18.0, 67.0],
-      [18.0, 69.0],
-      [22.0, 69.0],
-    ],
-    color: "rgba(255,100,0,0.25)",
-  },
-  {
-    id: "bay-of-bengal",
-    polygon: [
-      [17.0, 87.0],
-      [15.0, 87.0],
-      [13.0, 89.0],
-      [14.0, 91.0],
-      [17.0, 89.0],
-    ],
-    color: "rgba(255,0,200,0.25)",
-  },
-  {
-    id: "indian-ocean",
-    polygon: [
-      [10.0, 72.0],
-      [7.0, 72.0],
-      [6.0, 74.0],
-      [7.0, 76.0],
-      [10.0, 75.0],
-    ],
-    color: "rgba(255,0,100,0.2)",
-  },
+  { id: "pakistan-north", polygon: [[35.0, 74.5],[34.0, 74.0],[33.5, 73.5],[33.5, 74.5]], color: "rgba(255,0,0,0.3)" },
+  { id: "pakistan-south", polygon: [[25.5, 67.5],[25.0, 67.0],[24.5, 67.0],[24.5, 67.5]], color: "rgba(255,50,50,0.3)" },
+  { id: "arabian-sea", polygon: [[22.0, 65.5],[20.0, 65.5],[18.0, 67.0],[18.0, 69.0],[22.0, 69.0]], color: "rgba(255,100,0,0.25)" },
+  { id: "bay-of-bengal", polygon: [[17.0, 87.0],[15.0, 87.0],[13.0, 89.0],[14.0, 91.0],[17.0, 89.0]], color: "rgba(255,0,200,0.25)" },
+  { id: "indian-ocean", polygon: [[10.0, 72.0],[7.0, 72.0],[6.0, 74.0],[7.0, 76.0],[10.0, 75.0]], color: "rgba(255,0,100,0.2)" },
 ];
-
 
 export default function TerritoryMap({
   onLogsUpdate,
@@ -79,14 +30,14 @@ export default function TerritoryMap({
   mapSize,
   focusMode,
   setFocusMode,
-  selectedBaseId, setSelectedBaseId,
+  selectedBaseId,
+  setSelectedBaseId,
 }) {
   const { jammerReports, setJammerReports, currentFrequency, setCurrentFrequency, availableFrequencies } = useSDR();
   const [floatingMessages, showMessage] = useFloatingMessages();
   const [globalObjects, setGlobalObjects] = useState([]);
   const [incomingSignals, setIncomingSignals] = useState([]);
   const [explosions, setExplosions] = useState([]);
-
   const spawnedMissiles = useRef(new Set());
 
   // 🔹 Convert lat/lng → Konva pixel positions for bases
@@ -132,7 +83,6 @@ export default function TerritoryMap({
   // 2️⃣ Handle New Missile Spawn
   useEffect(() => {
     if (!newMissile || spawnedMissiles.current.has(newMissile.id)) return;
-
     const { startLat, startLng, targetLat, targetLng } = newMissile;
     if (startLat == null || startLng == null || targetLat == null || targetLng == null) return;
 
@@ -194,9 +144,7 @@ export default function TerritoryMap({
         if (point) setExplosions((prev) => [...prev, { x: point.x, y: point.y }]);
 
         setGlobalObjects((prev) =>
-          prev.map((m) =>
-            m.id === obj.id ? { ...m, exploded: true } : m
-          )
+          prev.map((m) => (m.id === obj.id ? { ...m, exploded: true } : m))
         );
       }
     });
@@ -218,7 +166,7 @@ export default function TerritoryMap({
     showMessage
   );
 
-  // 🔹 Determine visible objects in Focus Mode
+  // 🔹 Visible objects
   const visibleObjects =
     focusMode && selectedBaseId
       ? globalObjects.filter(
@@ -250,15 +198,6 @@ export default function TerritoryMap({
   );
   const scaledBaseUnits = useSubBaseUnits(baseUnitsLocal, konvaZoom);
 
-  // 🔹 Base Marker Click
-  const handleBaseClick = (base) => {
-    setFocusMode(true);
-    setSelectedBaseId(base.id);
-    if (mapInstance) {
-      mapInstance.flyTo(base.coords, 15, { animate: true, duration: 1.5 });
-    }
-  };
-
   return (
     <>
       {/* 🔹 Launch Zones */}
@@ -271,31 +210,40 @@ export default function TerritoryMap({
       ))}
 
       {/* 🔹 Base Markers */}
+{/* 🔹 Base Markers */}
+      {/* 🔹 Base Markers (Disabled here, handled in FullMap) */}
+      {/*
       {mapInstance &&
-  BASES.map((base) => (
-    <Marker
-      key={base.id}
-      position={base.coords}
-      icon={getStyledBaseIcon(base, focusMode && selectedBaseId === base.id)}
-      eventHandlers={{
-        click: () => {
-          if (!mapInstance) return;
-          setFocusMode(true);
-          setSelectedBaseId(base.id);
-          mapInstance.flyTo(base.coords, 15, { animate: true, duration: 1.5 });
-        },
-      }}
-    />
-  ))
-}
+        BASES.map((base) => (
+          <Marker
+            key={base.id}
+            position={base.coords}
+            zIndexOffset={1000}
+            icon={getStyledBaseIcon(base, focusMode && selectedBaseId === base.id)}
+            eventHandlers={{
+              click: (e) => {
+                e.originalEvent.stopPropagation();
+                setFocusMode(true);
+                setSelectedBaseId(base.id);
+                mapInstance.flyTo(base.coords, 15, { animate: true });
+              },
+            }}
+          />
+        ))
+      }
+      */}
+
 
 
       {/* 🎨 Konva Canvas Overlay */}
-      <div className="absolute inset-0 w-full h-full pointer-events-none" style={{ zIndex: 450 }}>
+      <div
+        className="absolute inset-0 w-full h-full"
+        style={{ zIndex: 450, pointerEvents: "none" }} // Pass clicks through
+      >
         <GridCanvas
           width={mapSize.width}
-           style={{ pointerEvents: "none" }} 
           height={mapSize.height}
+          style={{ pointerEvents: "none" }} // Konva won't intercept
           explosions={explosions}
           setExplosions={setExplosions}
           objects={[...scaledBaseUnits, ...missilesInPixels]}

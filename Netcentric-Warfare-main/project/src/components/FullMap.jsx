@@ -101,15 +101,31 @@ export default function FullMap({ step, onLogsUpdate, newJammer }) {
       payload: missile,
     });
   };
+const handleBaseClick = (base) => {
+  setFocusMode(true);
+  setSelectedBaseId(base.id);
 
-  // ✅ Handle base marker click → Focus + Zoom
-  const handleBaseClick = (base) => {
-    setFocusMode(true);
-    setSelectedBaseId(base.id);
-    if (mapInstance) {
-      mapInstance.flyTo(base.coords, 15, { animate: true, duration: 1.5 });
+  if (mapInstance) {
+    const targetZoom = 15;
+    const currentZoom = mapInstance.getZoom();
+
+    // ✅ If already at 15, force a slightly lower first to re-trigger animation
+    if (currentZoom === targetZoom) {
+      mapInstance.setZoom(targetZoom - 1, { animate: false });
     }
-  };
+
+    mapInstance.flyTo(base.coords, targetZoom, {
+      animate: true,
+      easeLinearity: 0.25, // Smooth zoom
+    });
+
+    // Force redraw after move
+    mapInstance.once("moveend", () => {
+      mapInstance.invalidateSize();
+    });
+  }
+};
+
 
   // Resize logic
   useEffect(() => {
