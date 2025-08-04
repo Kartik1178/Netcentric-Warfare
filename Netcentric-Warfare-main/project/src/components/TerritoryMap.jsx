@@ -110,6 +110,48 @@ export default function TerritoryMap({
     });
   }, [newMissile]);
 
+// 4️⃣ Animate Missiles Towards Target
+useEffect(() => {
+  const interval = setInterval(() => {
+    setGlobalObjects((prev) =>
+      prev.map((obj) => {
+        if (obj.type !== "missile") return obj; // Only move missiles
+
+        const dx = obj.targetX - obj.x;
+        const dy = obj.targetY - obj.y;
+        const dist = Math.sqrt(dx * dx + dy * dy);
+
+        // ✅ If missile reaches the target, stop moving
+        if (dist < obj.speed) {
+          return { ...obj, x: obj.targetX, y: obj.targetY, reached: true };
+        }
+
+        // ✅ Move missile toward target
+        const nx = obj.x + (dx / dist) * obj.speed;
+        const ny = obj.y + (dy / dist) * obj.speed;
+
+        return { ...obj, x: nx, y: ny };
+      })
+    );
+  }, 30); // Runs every 30ms (~33fps)
+
+  return () => clearInterval(interval);
+}, []);
+useEffect(() => {
+  globalObjects.forEach((obj, idx) => {
+    if (obj.type === "missile" && obj.reached && !obj.exploded) {
+      // ✅ Create explosion at missile location
+      setExplosions((prev) => [...prev, { x: obj.x, y: obj.y }]);
+
+      // ✅ Mark missile as exploded (so it disappears)
+      setGlobalObjects((prev) =>
+        prev.map((m) =>
+          m.id === obj.id ? { ...m, exploded: true } : m
+        )
+      );
+    }
+  });
+}, [globalObjects]);
 
   // 3️⃣ Central AI Decisions
   useCentralAI(globalObjects, (log) => {
@@ -144,68 +186,34 @@ export default function TerritoryMap({
   // 🔹 Scale sub-base units for zoom
   const baseUnitsLocal = visibleObjects.filter((o) => o.type !== "missile" && o.type !== "interceptor");
   const scaledBaseUnits = useSubBaseUnits(baseUnitsLocal, konvaZoom);
+return (
+  <div className="absolute inset-0 w-full h-full pointer-events-none">
+    <GridCanvas
+      width={mapSize.width}
+      height={mapSize.height}
+      explosions={explosions}
+      setExplosions={setExplosions}
+      objects={[
+        ...scaledBaseUnits,
+        ...visibleObjects.filter((o) => o.type === "missile" || o.type === "interceptor"),
+      ]}
+      incomingSignals={incomingSignals}
+      setIncomingSignals={setIncomingSignals}
+      jammerReports={jammerReports}
+      setJammerReports={setJammerReports}
+      currentFrequency={currentFrequency}
+      setCurrentFrequency={setCurrentFrequency}
+      availableFrequencies={availableFrequencies}
+      focusMode={focusMode}
+      baseZones={focusBaseZones}
+      zoom={konvaZoom}
+      center={center}
+      selectedBaseId={selectedBaseId}
+      floatingMessages={floatingMessages}
+      onBaseClick={() => {}}
+    />
+  </div>
+);
 
-  return (
-    <div className="absolute inset-0 w-full h-full z-[1000]" style={{ pointerEvents: focusMode ? "auto" : "none" }}>
-      {/* 🎛 Focus Controls */}
-      <div className="absolute top-4 left-4 z-50 p-2 bg-white rounded shadow pointer-events-auto">
-        <button
-          onClick={() => setFocusMode((prev) => !prev)}
-          className="mr-2 px-2 py-1 border rounded"
-        >
-          {focusMode ? "🔍 Focus Mode ON" : "🌍 Overview Mode"}
-        </button>
-        <select
-          value={selectedBaseId || ""}
-          onChange={(e) => setSelectedBaseId(e.target.value)}
-          disabled={!focusMode}
-          className="px-2 py-1 border rounded"
-        >
-          <option value="">-- Select Base --</option>
-          {BASES.map((base) => (
-            <option key={base.id} value={base.id}>
-              {base.id}
-            </option>
-          ))}
-        </select>
-      </div>
 
-      {/* 🟢 Leaflet Base Markers */}
-      {mapInstance &&
-        BASES.map((base) => (
-          <Marker
-            key={base.id}
-            position={base.coords}
-            icon={getStyledBaseIcon(base, focusMode && selectedBaseId === base.id)}
-            eventHandlers={{ click: () => handleBaseClick(base) }}
-          />
-        ))}
-
-      {/* 🎨 Konva Canvas */}
-      <GridCanvas
-        width={mapSize.width}
-        height={mapSize.height}
-        explosions={explosions}
-        setExplosions={setExplosions}
-        objects={[
-          ...scaledBaseUnits,
-          ...visibleObjects.filter((o) => o.type === "missile" || o.type === "interceptor"),
-        ]}
-        incomingSignals={incomingSignals}
-        setIncomingSignals={setIncomingSignals}
-        jammerReports={jammerReports}
-        setJammerReports={setJammerReports}
-        currentFrequency={currentFrequency}
-        setCurrentFrequency={setCurrentFrequency}
-        availableFrequencies={availableFrequencies}
-        focusMode={focusMode}
-        baseZones={focusBaseZones}
-        zoom={konvaZoom}
-        center={center}
-        selectedBaseId={selectedBaseId}
-        floatingMessages={floatingMessages}
-        onBaseClick={() => {}}
-      />
-    </div>
-  );
 }
