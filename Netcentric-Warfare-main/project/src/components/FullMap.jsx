@@ -4,8 +4,6 @@ import {
   TileLayer,
   useMap,
   useMapEvents,
-  Polygon,
-  Tooltip,
   Marker,
 } from "react-leaflet";
 import TerritoryMap from "./TerritoryMap";
@@ -22,7 +20,7 @@ const LAUNCH_ZONES = [
   { id: "indian-ocean", polygon: [[10.0, 72.0],[7.0, 72.0],[6.0, 74.0],[7.0, 76.0],[10.0, 75.0]], color: "rgba(255,0,100,0.2)", label: "Enemy Launch Zone (Southern Ocean)" },
 ];
 
-// 🔹 Check click is inside launch zone
+// 🔹 Check if click is inside a launch zone
 function isInsideLaunchZone(latlng) {
   return LAUNCH_ZONES.some((zone) => {
     const polygon = L.polygon(zone.polygon);
@@ -51,44 +49,69 @@ function MapStateUpdater({ setZoom, setCenter }) {
   return null;
 }
 
+// 🔹 Handles map clicks for missile launch
 function MapClickHandler({ step, onMissileLaunch }) {
   useMapEvents({
     click(e) {
       if (step !== "launch") return;
 
+      // ✅ Ensure click is in an allowed enemy zone
       if (!isInsideLaunchZone(e.latlng)) {
         alert("❌ Launch outside allowed zones!");
         return;
       }
 
+      // ✅ Set fixed target (Delhi for now)
       const fixedTarget = { id: "base-fixed", coords: [28.6139, 77.209] };
 
+      // ✅ Launch missile with the new lat/lng-based structure
       onMissileLaunch({
-        latlng: e.latlng,
-        nearestBase: fixedTarget,
+        id: `missile-${Date.now()}`,
+        baseId: fixedTarget.id,
+        startLat: e.latlng.lat,
+        startLng: e.latlng.lng,
+        targetLat: fixedTarget.coords[0],
+        targetLng: fixedTarget.coords[1],
       });
     },
   });
   return null;
 }
 
-export default function FullMap({
-  step,
-  onMissileLaunch,
-  onLogsUpdate,
-  newMissile,
-  newJammer,
-}) {
+export default function FullMap({ step, onLogsUpdate, newJammer }) {
   const [zoom, setZoom] = useState(5);
-  const [center, setCenter] = useState([28.6139, 77.209]); // Delhi
+  const [center, setCenter] = useState([28.6139, 77.209]);
   const [mapInstance, setMapInstance] = useState(null);
   const [mapSize, setMapSize] = useState({ width: window.innerWidth, height: window.innerHeight });
   const [focusMode, setFocusMode] = useState(false);
   const [selectedBaseId, setSelectedBaseId] = useState(null);
+  const [newMissile, setNewMissile] = useState(null); // ✅ Local state
 
   const containerRef = useRef(null);
 
-  // 🔹 Resize listener
+  // ✅ Handle missile launch
+  const handleMissileLaunch = (missile) => {
+    setNewMissile(missile); // ✅ Trigger TerritoryMap spawn
+
+    onLogsUpdate?.({
+      timestamp: new Date().toLocaleTimeString(),
+      source: "FullMap",
+      type: "launch",
+      message: `Missile launched from [${missile.startLat.toFixed(2)}, ${missile.startLng.toFixed(2)}] targeting ${missile.baseId}`,
+      payload: missile,
+    });
+  };
+
+  // ✅ Handle base marker click → Focus + Zoom
+  const handleBaseClick = (base) => {
+    setFocusMode(true);
+    setSelectedBaseId(base.id);
+    if (mapInstance) {
+      mapInstance.flyTo(base.coords, 15, { animate: true, duration: 1.5 });
+    }
+  };
+
+  // Resize logic
   useEffect(() => {
     const resize = () => {
       if (!containerRef.current) return;
@@ -125,41 +148,17 @@ export default function FullMap({
 
         <MapStateUpdater setZoom={setZoom} setCenter={setCenter} />
         <MapReadySetter onMapReady={setMapInstance} />
-        <MapClickHandler step={step} onMissileLaunch={onMissileLaunch} />
+        <MapClickHandler step={step} onMissileLaunch={handleMissileLaunch} />
 
-        {/* 🟢 Leaflet Base Markers (Now Interactive) */}
+        {/* 🟢 Base Markers */}
         {mapInstance &&
           BASES.map((base) => (
             <Marker
               key={base.id}
               position={base.coords}
               icon={getStyledBaseIcon(base, focusMode && selectedBaseId === base.id)}
-              eventHandlers={{
-                click: () => {
-                  setFocusMode(true);
-                  setSelectedBaseId(base.id);
-                  mapInstance.flyTo(base.coords, 15, { animate: true, duration: 1.5 });
-                },
-              }}
+              eventHandlers={{ click: () => handleBaseClick(base) }}
             />
-          ))}
-
-        {/* 🔹 Highlight Launch Zones */}
-        {step === "launch" &&
-          LAUNCH_ZONES.map((zone) => (
-            <Polygon
-              key={zone.id}
-              positions={zone.polygon}
-              pathOptions={{
-                color: "red",
-                weight: 3,
-                dashArray: "6 8",
-                fillColor: zone.color,
-                fillOpacity: 0.45,
-              }}
-            >
-              <Tooltip sticky>{zone.label}</Tooltip>
-            </Polygon>
           ))}
 
         {/* 🎨 Konva Canvas Overlay */}
@@ -171,8 +170,9 @@ export default function FullMap({
           focusMode={focusMode}
           setFocusMode={setFocusMode}
           selectedBaseId={selectedBaseId}
+          setSelectedBaseId={setSelectedBaseId}
           onLogsUpdate={onLogsUpdate}
-          newMissile={newMissile}
+          newMissile={newMissile} // ✅ Pass updated missile
           newJammer={newJammer}
         />
       </MapContainer>

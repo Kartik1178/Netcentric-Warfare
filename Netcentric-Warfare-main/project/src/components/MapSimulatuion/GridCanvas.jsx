@@ -88,7 +88,7 @@ export default function GridCanvas({
         left: 0,
         zIndex: 1000,
         background: "rgba(0,0,0,0.3)", // Debug background
-        pointerEvents: focusMode ? "auto" : "none",
+        pointerEvents:"none",
       }}
     >
       <Layer>

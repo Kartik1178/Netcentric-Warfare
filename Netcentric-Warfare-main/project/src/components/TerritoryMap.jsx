@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef } from "react";
+import { Marker, Polygon } from "react-leaflet";
 import GridCanvas from "./MapSimulatuion/GridCanvas";
 import { useSDR } from "../hooks/SDRContext";
 import { generateBaseUnits } from "../hooks/GenerateBaseUnits";
@@ -8,9 +9,65 @@ import { useCentralAI } from "../hooks/useCentralAI";
 import useFloatingMessages from "../hooks/useFloatingMessages";
 import { useLeafletToKonvaTransform } from "../hooks/useLeafletToKonvaTransform";
 import { useSmoothPositions } from "../hooks/useSmoothPositions";
-import { getStyledBaseIcon } from "../utils/transparentIcon";
 import { useSubBaseUnits } from "../hooks/useSubBaseUnits";
-import { Marker } from "react-leaflet";
+import { getStyledBaseIcon } from "../utils/transparentIcon";
+
+const LAUNCH_ZONES = [
+  {
+    id: "pakistan-north",
+    polygon: [
+      [35.0, 74.5],
+      [34.0, 74.0],
+      [33.5, 73.5],
+      [33.5, 74.5],
+    ],
+    color: "rgba(255,0,0,0.3)",
+  },
+  {
+    id: "pakistan-south",
+    polygon: [
+      [25.5, 67.5],
+      [25.0, 67.0],
+      [24.5, 67.0],
+      [24.5, 67.5],
+    ],
+    color: "rgba(255,50,50,0.3)",
+  },
+  {
+    id: "arabian-sea",
+    polygon: [
+      [22.0, 65.5],
+      [20.0, 65.5],
+      [18.0, 67.0],
+      [18.0, 69.0],
+      [22.0, 69.0],
+    ],
+    color: "rgba(255,100,0,0.25)",
+  },
+  {
+    id: "bay-of-bengal",
+    polygon: [
+      [17.0, 87.0],
+      [15.0, 87.0],
+      [13.0, 89.0],
+      [14.0, 91.0],
+      [17.0, 89.0],
+    ],
+    color: "rgba(255,0,200,0.25)",
+  },
+  {
+    id: "indian-ocean",
+    polygon: [
+      [10.0, 72.0],
+      [7.0, 72.0],
+      [6.0, 74.0],
+      [7.0, 76.0],
+      [10.0, 75.0],
+    ],
+    color: "rgba(255,0,100,0.2)",
+  },
+];
+
 
 export default function TerritoryMap({
   onLogsUpdate,
@@ -22,13 +79,14 @@ export default function TerritoryMap({
   mapSize,
   focusMode,
   setFocusMode,
+  selectedBaseId, setSelectedBaseId,
 }) {
   const { jammerReports, setJammerReports, currentFrequency, setCurrentFrequency, availableFrequencies } = useSDR();
   const [floatingMessages, showMessage] = useFloatingMessages();
   const [globalObjects, setGlobalObjects] = useState([]);
   const [incomingSignals, setIncomingSignals] = useState([]);
   const [explosions, setExplosions] = useState([]);
-  const [selectedBaseId, setSelectedBaseId] = useState(null);
+
   const spawnedMissiles = useRef(new Set());
 
   // 🔹 Convert lat/lng → Konva pixel positions for bases
@@ -57,15 +115,6 @@ export default function TerritoryMap({
     });
   };
 
-  // 🔹 Handle base focus
-  const handleBaseClick = (base) => {
-    setFocusMode(true);
-    setSelectedBaseId(base.id);
-    if (mapInstance) {
-      mapInstance.flyTo(base.coords, 15, { animate: true, duration: 1.5 });
-    }
-  };
-
   // 1️⃣ Initialize Base Units
   useEffect(() => {
     if (!pixelPositions || Object.keys(pixelPositions).length === 0) return;
@@ -84,18 +133,18 @@ export default function TerritoryMap({
   useEffect(() => {
     if (!newMissile || spawnedMissiles.current.has(newMissile.id)) return;
 
-    const { startPosition, targetPosition } = newMissile;
-    if (!startPosition || !targetPosition) return;
+    const { startLat, startLng, targetLat, targetLng } = newMissile;
+    if (startLat == null || startLng == null || targetLat == null || targetLng == null) return;
 
     const missileObj = {
       id: newMissile.id,
       type: "missile",
-      x: startPosition.x,
-      y: startPosition.y,
-      targetX: targetPosition.x,
-      targetY: targetPosition.y,
+      lat: startLat,
+      lng: startLng,
+      targetLat,
+      targetLng,
       baseId: newMissile.baseId,
-      speed: 2,
+      speed: 0.05,
     };
 
     setGlobalObjects((prev) => [...prev, missileObj]);
@@ -110,61 +159,64 @@ export default function TerritoryMap({
     });
   }, [newMissile]);
 
-// 4️⃣ Animate Missiles Towards Target
-useEffect(() => {
-  const interval = setInterval(() => {
-    setGlobalObjects((prev) =>
-      prev.map((obj) => {
-        if (obj.type !== "missile") return obj; // Only move missiles
-
-        const dx = obj.targetX - obj.x;
-        const dy = obj.targetY - obj.y;
-        const dist = Math.sqrt(dx * dx + dy * dy);
-
-        // ✅ If missile reaches the target, stop moving
-        if (dist < obj.speed) {
-          return { ...obj, x: obj.targetX, y: obj.targetY, reached: true };
-        }
-
-        // ✅ Move missile toward target
-        const nx = obj.x + (dx / dist) * obj.speed;
-        const ny = obj.y + (dy / dist) * obj.speed;
-
-        return { ...obj, x: nx, y: ny };
-      })
-    );
-  }, 30); // Runs every 30ms (~33fps)
-
-  return () => clearInterval(interval);
-}, []);
-useEffect(() => {
-  globalObjects.forEach((obj, idx) => {
-    if (obj.type === "missile" && obj.reached && !obj.exploded) {
-      // ✅ Create explosion at missile location
-      setExplosions((prev) => [...prev, { x: obj.x, y: obj.y }]);
-
-      // ✅ Mark missile as exploded (so it disappears)
+  // 3️⃣ Animate Missiles in Lat/Lng
+  useEffect(() => {
+    const interval = setInterval(() => {
       setGlobalObjects((prev) =>
-        prev.map((m) =>
-          m.id === obj.id ? { ...m, exploded: true } : m
-        )
-      );
-    }
-  });
-}, [globalObjects]);
+        prev.map((obj) => {
+          if (obj.type !== "missile" || obj.exploded) return obj;
 
-  // 3️⃣ Central AI Decisions
-  useCentralAI(globalObjects, (log) => {
-    onLogsUpdate?.({
-      timestamp: new Date().toLocaleTimeString(),
-      source: "CentralAI",
-      type: log.action,
-      message: `CentralAI decided to ${log.action} missile ${log.missileId} using ${log.targetUnit}`,
-      payload: log,
+          const dx = obj.targetLng - obj.lng;
+          const dy = obj.targetLat - obj.lat;
+          const dist = Math.sqrt(dx * dx + dy * dy);
+
+          if (dist < 0.001) {
+            return { ...obj, lat: obj.targetLat, lng: obj.targetLng, reached: true };
+          }
+
+          return {
+            ...obj,
+            lat: obj.lat + (dy / dist) * obj.speed,
+            lng: obj.lng + (dx / dist) * obj.speed,
+          };
+        })
+      );
+    }, 30);
+
+    return () => clearInterval(interval);
+  }, []);
+
+  // 4️⃣ Handle Explosions
+  useEffect(() => {
+    globalObjects.forEach((obj) => {
+      if (obj.type === "missile" && obj.reached && !obj.exploded) {
+        const point = mapInstance?.latLngToContainerPoint([obj.lat, obj.lng]);
+        if (point) setExplosions((prev) => [...prev, { x: point.x, y: point.y }]);
+
+        setGlobalObjects((prev) =>
+          prev.map((m) =>
+            m.id === obj.id ? { ...m, exploded: true } : m
+          )
+        );
+      }
     });
-  }, (signal) => {
-    socket.emit("unit-signal", signal);
-  }, showMessage);
+  }, [globalObjects]);
+
+  // 5️⃣ Central AI
+  useCentralAI(
+    globalObjects,
+    (log) => {
+      onLogsUpdate?.({
+        timestamp: new Date().toLocaleTimeString(),
+        source: "CentralAI",
+        type: log.action,
+        message: `CentralAI decided to ${log.action} missile ${log.missileId} using ${log.targetUnit}`,
+        payload: log,
+      });
+    },
+    (signal) => socket.emit("unit-signal", signal),
+    showMessage
+  );
 
   // 🔹 Determine visible objects in Focus Mode
   const visibleObjects =
@@ -183,37 +235,86 @@ useEffect(() => {
       ? { [selectedBaseId]: smoothBasePositions[selectedBaseId] }
       : smoothBasePositions;
 
-  // 🔹 Scale sub-base units for zoom
-  const baseUnitsLocal = visibleObjects.filter((o) => o.type !== "missile" && o.type !== "interceptor");
+  // 🔹 Convert missiles to pixel coordinates
+  const missilesInPixels = visibleObjects
+    .filter((o) => o.type === "missile" && !o.exploded)
+    .map((obj) => {
+      if (!mapInstance) return null;
+      const point = mapInstance.latLngToContainerPoint([obj.lat, obj.lng]);
+      return { ...obj, x: point.x, y: point.y };
+    })
+    .filter(Boolean);
+
+  const baseUnitsLocal = visibleObjects.filter(
+    (o) => o.type !== "missile" && o.type !== "interceptor"
+  );
   const scaledBaseUnits = useSubBaseUnits(baseUnitsLocal, konvaZoom);
-return (
-  <div className="absolute inset-0 w-full h-full pointer-events-none">
-    <GridCanvas
-      width={mapSize.width}
-      height={mapSize.height}
-      explosions={explosions}
-      setExplosions={setExplosions}
-      objects={[
-        ...scaledBaseUnits,
-        ...visibleObjects.filter((o) => o.type === "missile" || o.type === "interceptor"),
-      ]}
-      incomingSignals={incomingSignals}
-      setIncomingSignals={setIncomingSignals}
-      jammerReports={jammerReports}
-      setJammerReports={setJammerReports}
-      currentFrequency={currentFrequency}
-      setCurrentFrequency={setCurrentFrequency}
-      availableFrequencies={availableFrequencies}
-      focusMode={focusMode}
-      baseZones={focusBaseZones}
-      zoom={konvaZoom}
-      center={center}
-      selectedBaseId={selectedBaseId}
-      floatingMessages={floatingMessages}
-      onBaseClick={() => {}}
+
+  // 🔹 Base Marker Click
+  const handleBaseClick = (base) => {
+    setFocusMode(true);
+    setSelectedBaseId(base.id);
+    if (mapInstance) {
+      mapInstance.flyTo(base.coords, 15, { animate: true, duration: 1.5 });
+    }
+  };
+
+  return (
+    <>
+      {/* 🔹 Launch Zones */}
+      {LAUNCH_ZONES.map((zone) => (
+        <Polygon
+          key={zone.id}
+          positions={zone.polygon}
+          pathOptions={{ color: zone.color, fillColor: zone.color, fillOpacity: 0.3 }}
+        />
+      ))}
+
+      {/* 🔹 Base Markers */}
+      {mapInstance &&
+  BASES.map((base) => (
+    <Marker
+      key={base.id}
+      position={base.coords}
+      icon={getStyledBaseIcon(base, focusMode && selectedBaseId === base.id)}
+      eventHandlers={{
+        click: () => {
+          if (!mapInstance) return;
+          setFocusMode(true);
+          setSelectedBaseId(base.id);
+          mapInstance.flyTo(base.coords, 15, { animate: true, duration: 1.5 });
+        },
+      }}
     />
-  </div>
-);
+  ))
+}
 
 
+      {/* 🎨 Konva Canvas Overlay */}
+      <div className="absolute inset-0 w-full h-full pointer-events-none" style={{ zIndex: 450 }}>
+        <GridCanvas
+          width={mapSize.width}
+           style={{ pointerEvents: "none" }} 
+          height={mapSize.height}
+          explosions={explosions}
+          setExplosions={setExplosions}
+          objects={[...scaledBaseUnits, ...missilesInPixels]}
+          incomingSignals={incomingSignals}
+          setIncomingSignals={setIncomingSignals}
+          jammerReports={jammerReports}
+          setJammerReports={setJammerReports}
+          currentFrequency={currentFrequency}
+          setCurrentFrequency={setCurrentFrequency}
+          availableFrequencies={availableFrequencies}
+          focusMode={focusMode}
+          baseZones={focusBaseZones}
+          zoom={konvaZoom}
+          center={center}
+          selectedBaseId={selectedBaseId}
+          floatingMessages={floatingMessages}
+          onBaseClick={() => {}}
+        />
+      </div>
+    </>
+  );
 }
