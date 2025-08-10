@@ -35,25 +35,21 @@ export default function TerritoryMap({
 }) {
   const { jammerReports, setJammerReports, currentFrequency, setCurrentFrequency, availableFrequencies } = useSDR();
   
-  // Create a ref for showMessage
   const showMessageRef = useRef(null);
   const [floatingMessages, showMessage] = useFloatingMessages();
-  // Update the ref's current value whenever showMessage changes
   useEffect(() => {
     showMessageRef.current = showMessage;
   }, [showMessage]);
 
   const [globalObjects, setGlobalObjects] = useState([]);
-  const [incomingSignals, setIncomingSignals] = useState([]); // This is unused, can be removed
+  const [incomingSignals, setIncomingSignals] = useState([]); 
   const [explosions, setExplosions] = useState([]);
   const spawnedMissiles = useRef(new Set());
   const [activeInterceptors, setActiveInterceptors] = useState([]);
 
-  // Ref to store last logged detection timestamp per missile (for rate-limiting radar logs)
   const loggedMissileDetections = useRef(new Map());
-  const LOG_COOLDOWN_MS = 500; // Only log a detection for the same missile every 500ms
+  const LOG_COOLDOWN_MS = 500; 
 
-  // 🔹 Convert lat/lng → Konva pixel positions for bases
   const { pixelPositions, zoom: konvaZoom } = useLeafletToKonvaTransform({
     mapInstance,
     baseData: BASES,
@@ -61,7 +57,6 @@ export default function TerritoryMap({
   });
   const smoothBasePositions = useSmoothPositions(pixelPositions, 300);
 
-  // 🔹 Generate Units for all sub-bases
   const generateUnitsForBase = (baseId) => {
     const baseData = BASES.find((b) => b.id === baseId);
     if (!baseData) return [];
@@ -79,7 +74,6 @@ export default function TerritoryMap({
     });
   };
 
-  // 1️⃣ Initialize Base Units
   useEffect(() => {
     if (!pixelPositions || Object.keys(pixelPositions).length === 0) return;
 
@@ -94,7 +88,6 @@ export default function TerritoryMap({
   }, [pixelPositions, konvaZoom, focusMode, selectedBaseId]);
 
 
-  // 2️⃣ Handle New Missile Spawn
   useEffect(() => {
     if (!newMissile || spawnedMissiles.current.has(newMissile.id)) return;
     const { startLat, startLng, targetLat, targetLng } = newMissile;
@@ -108,7 +101,7 @@ export default function TerritoryMap({
       targetLat,
       targetLng,
       baseId: newMissile.baseId,
-      speed: 0.05, // Missile speed
+      speed: 0.05, 
       exploded: false,
     };
 
@@ -125,7 +118,6 @@ export default function TerritoryMap({
   }, [newMissile]);
 
 
-  // Handle Interceptor Launch
   const handleInterceptorLaunch = useCallback(({ launcherX, launcherY, targetX, targetY, threatId }) => {
     const interceptorObj = {
       id: `interceptor-${Date.now()}`,
@@ -134,14 +126,14 @@ export default function TerritoryMap({
       y: launcherY,
       targetX,
       targetY,
-      threatId, // ID of the missile it's targeting
-      speed: 25, // Interceptor speed (must be faster than missile)
+      threatId, 
+      speed: 25, 
       exploded: false,
     };
     setActiveInterceptors((prev) => [...prev, interceptorObj]);
     onLogsUpdate?.({
       timestamp: new Date().toLocaleTimeString(),
-      source: "LauncherUnit", // ⚡️ CHANGED: Source is now LauncherUnit for clarity
+      source: "LauncherUnit", 
       type: "launch",
       message: `Interceptor ${interceptorObj.id.substring(interceptorObj.id.length - 4)} launched from [${launcherX}, ${launcherY}] targeting missile ${threatId.substring(threatId.length - 4)}`,
       payload: interceptorObj,
@@ -149,19 +141,17 @@ export default function TerritoryMap({
   }, [onLogsUpdate]);
 
 
-  // 3️⃣ Animate Missiles and Interceptors in Konva Pixel Coordinates
   useEffect(() => {
     const animationInterval = setInterval(() => {
       setGlobalObjects((prevGlobalObjects) => {
         const updatedObjects = prevGlobalObjects.map((obj) => {
           if (obj.type === "missile" && !obj.exploded) {
-            // Missile animation (lat/lng based, converted to pixels for display)
             const dx = obj.targetLng - obj.lng;
             const dy = obj.targetLat - obj.lat;
             const dist = Math.sqrt(dx * dx + dy * dy);
 
             if (dist < 0.001) {
-              return { ...obj, lat: obj.targetLat, lng: obj.targetLng, reached: true };
+              return { ...obj, lat: obj.targetLat, lng: obj.lng, reached: true };
             }
 
             return {
@@ -170,12 +160,11 @@ export default function TerritoryMap({
               lng: obj.lng + (dx / dist) * obj.speed,
             };
           } else if (obj.type === "interceptor" && !obj.exploded) {
-            // Interceptor animation (pixel based)
             const dx = obj.targetX - obj.x;
             const dy = obj.targetY - obj.y;
             const dist = Math.sqrt(dx * dx + dy * dy);
 
-            if (dist < 5) { // Close enough to target pixel
+            if (dist < 5) { 
               return { ...obj, x: obj.targetX, y: obj.targetY, reached: true };
             }
 
@@ -192,13 +181,13 @@ export default function TerritoryMap({
 
       setActiveInterceptors((prevInterceptors) => {
         return prevInterceptors.map((intc) => {
-          if (intc.exploded) return intc; // Already exploded
+          if (intc.exploded) return intc; 
 
           const dx = intc.targetX - intc.x;
           const dy = intc.targetY - intc.y;
           const dist = Math.sqrt(dx * dx + dy * dy);
 
-          if (dist < 5) { // Close enough to target pixel
+          if (dist < 5) { 
             return { ...intc, x: intc.targetX, y: intc.targetY, reached: true };
           }
 
@@ -210,25 +199,22 @@ export default function TerritoryMap({
         });
       });
 
-    }, 30); // Run animation every 30ms
+    }, 30); 
 
     return () => clearInterval(animationInterval);
-  }, []); // No dependencies for the interval itself
+  }, []); 
 
-  // Collision Detection
   useEffect(() => {
     const collisionCheckInterval = setInterval(() => {
       let newExplosions = [];
-      let updatedMissiles = new Set(); // To track missiles that exploded
-      let updatedInterceptors = new Set(); // To track interceptors that exploded
+      let updatedMissiles = new Set(); 
+      let updatedInterceptors = new Set(); 
 
-      // Filter out active missiles and interceptors from globalObjects
       const currentMissiles = globalObjects.filter(obj => obj.type === 'missile' && !obj.exploded);
       const currentInterceptors = activeInterceptors.filter(obj => obj.type === 'interceptor' && !obj.exploded);
 
       currentInterceptors.forEach(interceptor => {
         currentMissiles.forEach(missile => {
-          // Convert missile's lat/lng to pixel coordinates for collision check
           const missilePixelPos = mapInstance?.latLngToContainerPoint([missile.lat, missile.lng]);
           if (!missilePixelPos) return;
 
@@ -236,7 +222,7 @@ export default function TerritoryMap({
           const dy = missilePixelPos.y - interceptor.y;
           const distance = Math.sqrt(dx * dx + dy * dy);
 
-          const collisionThreshold = 30; // Pixels radius for collision
+          const collisionThreshold = 30; 
 
           if (distance < collisionThreshold && !interceptor.exploded && !missile.exploded) {
             console.log(`💥 COLLISION: Interceptor ${interceptor.id} hit Missile ${missile.id}!`);
@@ -247,7 +233,7 @@ export default function TerritoryMap({
 
             onLogsUpdate?.({
               timestamp: new Date().toLocaleTimeString(),
-              source: "TerritoryMap", // Keep this as TerritoryMap or change to "CollisionSystem"
+              source: "TerritoryMap", 
               type: "collision",
               message: `Interceptor ${interceptor.id.substring(interceptor.id.length - 4)} intercepted Missile ${missile.id.substring(missile.id.length - 4)}!`,
               payload: { interceptorId: interceptor.id, missileId: missile.id, location: missilePixelPos },
@@ -259,7 +245,6 @@ export default function TerritoryMap({
       if (newExplosions.length > 0) {
         setExplosions(prev => [...prev, ...newExplosions]);
 
-        // Mark collided objects as exploded in their respective states
         setGlobalObjects(prev =>
           prev.map(obj => {
             if (obj.type === 'missile' && updatedMissiles.has(obj.id)) {
@@ -277,13 +262,12 @@ export default function TerritoryMap({
           })
         );
       }
-    }, 50); // Check for collisions frequently
+    }, 50); 
 
     return () => clearInterval(collisionCheckInterval);
   }, [globalObjects, activeInterceptors, mapInstance, onLogsUpdate]);
 
 
-  // Handle Missile Explosions (when reached target)
   useEffect(() => {
     globalObjects.forEach((obj) => {
       if (obj.type === "missile" && obj.reached && !obj.exploded) {
@@ -305,27 +289,21 @@ export default function TerritoryMap({
   }, [globalObjects, mapInstance, onLogsUpdate]);
 
 
-  // Central AI
   useCentralAI(
-    globalObjects, // Pass all objects for AI to consider
+    globalObjects, 
     (log) => {
-      // Central AI logs are now floating messages, so this is less critical for main log
-      // onLogsUpdate?.({ /* ... */ }); // This is now correctly removed from useCentralAI
     },
     (signal) => socket.emit("unit-signal", signal),
-    showMessageRef.current // Pass the ref's current value for showMessage
+    showMessageRef.current 
   );
 
-  // 🔹 Handle unit signals (missile detection, antenna relay)
   useEffect(() => {
     const handleUnitSignal = (signal) => {
-      // Handle Radar Missile Detection logs (with rate-limiting)
       if (signal.type === "missile-detection") {
         const { payload } = signal;
         const missileId = payload.missileId;
         const now = Date.now();
 
-        // Rate-limiting check: Only log if this missile hasn't been logged recently
         const lastLoggedTime = loggedMissileDetections.current.get(missileId);
         if (!lastLoggedTime || (now - lastLoggedTime > LOG_COOLDOWN_MS)) {
           console.log(`🎯 Missile detected by ${payload.detectedBy}:`, payload);
@@ -334,7 +312,7 @@ export default function TerritoryMap({
             timestamp: new Date().toLocaleTimeString(),
             source: "RadarSystem",
             type: "detection",
-            message: `Missile ${payload.missileId.substring(payload.missileId.length - 4)} detected by ${payload.detectedBy.substring(payload.detectedBy.length - 4)} at ${payload.distance.toFixed(2)}km - Pos: ${payload.currentLat.toFixed(4)}, ${payload.currentLng.toFixed(4)}`,
+            message: `Missile ${(payload.missileId || 'unknown').substring((payload.missileId || 'unknown').length - 4)} detected by ${(payload.detectedBy || 'unknown').substring((payload.detectedBy || 'unknown').length - 4)} at ${payload.distance?.toFixed(2) ?? 'N/A'}km - Pos: ${payload.currentLat?.toFixed(4) ?? 'N/A'}, ${payload.currentLng?.toFixed(4) ?? 'N/A'}`,
             payload: {
               ...payload,
               detectionLat: payload.currentLat,
@@ -343,21 +321,22 @@ export default function TerritoryMap({
             },
           });
 
-          // Update the last logged time for this missile
           loggedMissileDetections.current.set(missileId, now);
         }
       } 
-      // Handle Antenna Relay to Central AI logs
       else if (signal.type === "relay-to-c2" && signal.source === "antenna") {
-        const { payload } = signal;
+        const payload = signal.payload; 
+        const antennaId = payload?.targetAntennaId || 'unknown-antenna';
+        const missileId = payload?.missileId || 'unknown-missile';
+
         onLogsUpdate?.({
           timestamp: new Date().toLocaleTimeString(),
           source: "AntennaSystem",
           type: "transmission",
-          message: `Antenna ${signal.payload.targetAntennaId.substring(signal.payload.targetAntennaId.length - 4)} relayed missile ${payload.missileId.substring(payload.missileId.length - 4)} data to Central AI.`,
-          payload: payload, // Pass the entire payload for consistency
+          message: `Antenna ${antennaId.substring(antennaId.length - 4)} relayed missile ${missileId.substring(missileId.length - 4)} data to Central AI.`,
+          payload: payload, 
         });
-        console.log(`📡 Antenna ${signal.payload.targetAntennaId} relayed to C2:`, payload);
+        console.log(`📡 Antenna ${antennaId} relayed to C2:`, payload);
       }
     };
 
@@ -365,7 +344,6 @@ export default function TerritoryMap({
     return () => socket.off("unit-signal", handleUnitSignal);
   }, [onLogsUpdate]);
 
-  // 🔹 Visible objects (combined for GridCanvas)
   const visibleObjects =
     focusMode && selectedBaseId
       ? [...globalObjects, ...activeInterceptors].filter(
@@ -375,14 +353,13 @@ export default function TerritoryMap({
             obj.type === "missile" ||
             obj.type === "interceptor"
         )
-      : [...globalObjects, ...activeInterceptors]; // Combine all for global view
+      : [...globalObjects, ...activeInterceptors]; 
 
   const focusBaseZones =
     focusMode && selectedBaseId
       ? { [selectedBaseId]: smoothBasePositions[selectedBaseId] }
       : smoothBasePositions;
 
-  // 🔹 Convert missiles to pixel coordinates (only missiles from globalObjects)
   const missilesInPixels = visibleObjects
     .filter((o) => o.type === "missile" && !o.exploded)
     .map((obj) => {
@@ -392,11 +369,9 @@ export default function TerritoryMap({
     })
     .filter(Boolean);
 
-  // Interceptors in pixels (from activeInterceptors)
   const interceptorsInPixels = visibleObjects
     .filter((o) => o.type === "interceptor" && !o.exploded)
     .map((obj) => {
-      // Interceptors are already in pixel coordinates
       return { ...obj };
     })
     .filter(Boolean);
@@ -442,17 +417,15 @@ export default function TerritoryMap({
       {/* 🎨 Konva Canvas Overlay */}
       <div
         className="absolute inset-0 w-full h-full"
-        style={{ zIndex: 400, pointerEvents: "none" }} // Balanced z-index - above map but below markers
+        style={{ zIndex: 400, pointerEvents: "none" }} 
       >
         <GridCanvas
           width={mapSize.width}
           height={mapSize.height}
-          style={{ pointerEvents: "none" }} // Konva won't intercept
+          style={{ pointerEvents: "none" }} 
           explosions={explosions}
           setExplosions={setExplosions}
           objects={[...scaledBaseUnits, ...missilesInPixels, ...interceptorsInPixels]}
-          // incomingSignals={incomingSignals} // incomingSignals is not used, can remove if not needed
-          // setIncomingSignals={setIncomingSignals} // setIncomingSignals is not used, can remove if not needed
           jammerReports={jammerReports}
           setJammerReports={setJammerReports}
           currentFrequency={currentFrequency}
@@ -466,7 +439,7 @@ export default function TerritoryMap({
           floatingMessages={floatingMessages}
           onBaseClick={() => {}}
           onLaunchInterceptor={handleInterceptorLaunch}
-          onLogsUpdate={onLogsUpdate} // Pass onLogsUpdate to GridCanvas
+          onLogsUpdate={onLogsUpdate} 
         />
       </div>
     </>

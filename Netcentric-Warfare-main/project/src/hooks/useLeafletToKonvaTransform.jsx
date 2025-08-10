@@ -38,7 +38,7 @@ export function useLeafletToKonvaTransform({ mapInstance, baseData = [], mapSize
     if (!result) return;
 
     const { updatedPixels, allValid } = result;
-    console.log("🔹 Calculated base pixels:", updatedPixels);
+
 
     const anyNonZero = Object.values(updatedPixels).some((p) => p.x > 0 && p.y > 0);
     if (!anyNonZero) return;

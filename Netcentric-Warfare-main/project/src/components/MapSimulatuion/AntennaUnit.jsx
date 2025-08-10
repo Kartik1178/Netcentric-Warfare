@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import React, { useEffect, useRef, useState } from "react";
 import { Image, Group, Circle, Text } from "react-konva";
 import useImage from "use-image";
 import socket from "../socket";
@@ -61,7 +61,6 @@ export default function Antenna({
     },
   });
 
-
   useEffect(() => {
     const handleRadarSignal = (data) => {
       const { source, type, payload } = data;
@@ -91,7 +90,7 @@ export default function Antenna({
             }
             // Emit the signal to the Central AI via the socket
             socket.emit("unit-signal", signalData); // This is the main signal to AI
-            console.log(`[Antenna ${id}] ✅ Emitted relay-to-c2:`, payload); // <-- This line is now UNCOMMENTED
+            console.log(`[Antenna ${id}] ✅ Emitted relay-to-c2:`, payload);
           }, 1000); // Simulate relay delay
         }
       }
@@ -116,6 +115,11 @@ export default function Antenna({
     return () => socket.off("frequency-change", handleFrequencyChange);
   }, [id]);
 
+  // Ensure the frequency text is always a valid string for Konva
+  const frequencyDisplayText = currentFrequency != null ? `Freq: ${currentFrequency}`.trim() : "Freq: N/A";
+  const finalFrequencyText = frequencyDisplayText === "" ? "Freq: Unknown" : frequencyDisplayText;
+
+
   return (
     <Group x={x} y={y}>
       <Circle
@@ -139,7 +143,7 @@ export default function Antenna({
         />
       )}
       <Text
-        text={`Freq: ${currentFrequency}`}
+        text={finalFrequencyText} // Use the robustly generated text
         x={-radius}
         y={radius + 5}
         fill="#fff"

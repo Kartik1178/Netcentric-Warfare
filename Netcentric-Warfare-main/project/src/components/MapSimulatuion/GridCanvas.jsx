@@ -159,7 +159,7 @@ export default function GridCanvas({
 
         {/* 🔹 Missiles */}
         {missiles.map((missile) => {
-          console.log("🚀 Rendering Missile:", missile.id, missile.x, missile.y);
+
           return (
             <Missile
               key={missile.id}
