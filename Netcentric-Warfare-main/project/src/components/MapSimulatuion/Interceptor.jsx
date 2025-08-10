@@ -3,21 +3,23 @@ import { Group, Circle, Image, Line } from 'react-konva';
 import useImage from 'use-image';
 
 export const Interceptor = ({
-  x,
-  y,
+  x, // Current X position (updated by TerritoryMap)
+  y, // Current Y position (updated by TerritoryMap)
   radius = 10,
-  heading,
-  collisionRadius
+  // heading, // Heading is not directly used for rendering a simple circle/image
+  // collisionRadius // Not directly used for rendering the interceptor itself
 }) => {
-  const [image] = useImage("/missile.png");
+  const [image] = useImage("/interceptor.png"); // Assuming you have an interceptor.png image
 
   return (
     <Group x={x} y={y}>
       <Circle
         radius={radius}
-        fill="green"
+        fill="cyan" // Interceptor color
         shadowBlur={4}
-        shadowColor="black"
+        shadowColor="cyan"
+        stroke="white"
+        strokeWidth={1}
       />
       {image && (
         <Image
@@ -33,19 +35,10 @@ export const Interceptor = ({
           }}
         />
       )}
-      {/* Optional: Draw heading line for debug */}
-      <Line
-        points={[0, 0, Math.cos(heading) * 20, Math.sin(heading) * 20]}
-        stroke="yellow"
-        strokeWidth={2}
-      />
-      <Circle
-        radius={collisionRadius}
-        stroke="cyan"
-        strokeWidth={1}
-        dash={[4, 4]}
-        opacity={0.4}
-      />
+      {/* Removed heading line and collisionRadius circle from Interceptor component
+          as they are typically for debugging or handled elsewhere.
+          You can re-add them if you have a specific visual need.
+      */}
     </Group>
   );
 };

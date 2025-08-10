@@ -54,7 +54,7 @@ socket.on("relay-to-c2", (missileData) => {
     console.log("❌ Client disconnected:", socket.id);
   });
 socket.on("command-launch", ({ missile, launcherId }) => {
-  console.log(`🚀 Central AI command: Launch interceptor from ${launcherId} for missile ${missile.id}`);
+  console.log(`🚀  AI command: Launch interceptor from ${launcherId} for missile ${missile.id}`);
   io.emit("launch-interceptor", { missile, launcherId });
 });
 

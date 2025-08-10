@@ -8,6 +8,9 @@ import Launcher from "./LauncherUnit";
 import Missile from "./Missile";
 import { Interceptor } from "./Interceptor";
 import Explosion from "../Explosion";
+import CentralAIUnit from "./CentralAIUnit";
+import { CENTRAL_AI_POSITION } from "../../constants/AIconstant";
+import FloatingMessages from "./FloatingMessages";
 
 function BaseGridBackground({ radius = 150, cellSize = 30 }) {
   const lines = [];
@@ -52,6 +55,10 @@ export default function GridCanvas({
   baseZones,
   zoom,
   selectedBaseId,
+  floatingMessages, // NEW: Floating messages state
+  onBaseClick, // This seems to be unused, can be removed
+  onLaunchInterceptor, // This is an unused prop, but let's keep it for now
+  onLogsUpdate // NEW: onLogsUpdate prop for logging
 }) {
   const stageRef = useRef();
 
@@ -86,13 +93,13 @@ export default function GridCanvas({
         position: "absolute",
         top: 0,
         left: 0,
-        zIndex: 1000,
-        background: "rgba(0,0,0,0.3)", // Debug background
-        pointerEvents:"none",
+        zIndex: 500,
+        background: "rgba(0,0,0,0.3)", // Reverted to semi-transparent black
+        pointerEvents: "none",
       }}
     >
       <Layer>
-        {/* Bases & Sub-Bases */}
+        {/* ... existing Bases & Sub-Bases rendering logic ... */}
         {Object.entries(baseZones).map(([baseId, basePos]) => {
           if (focusMode && selectedBaseId && baseId !== selectedBaseId) return null;
           if (!basePos || !showDetails) return null;
@@ -130,9 +137,10 @@ export default function GridCanvas({
                         currentFrequency,
                         setCurrentFrequency,
                         availableFrequencies,
+                        onLogsUpdate, // Pass onLogsUpdate down to units
                       };
                       switch (unit.type) {
-                        case "radar": return <Radar {...commonProps} />;
+                        case "radar": return <Radar {...commonProps} lat={unit.lat} lng={unit.lng} />;
                         case "antenna": return <Antenna {...commonProps} />;
                         case "jammer": return <DefenseJammer {...commonProps} />;
                         case "launcher": return <Launcher {...commonProps} />;
@@ -145,6 +153,9 @@ export default function GridCanvas({
             </Group>
           );
         })}
+
+        {/* 🚀 Central AI Visual Element now uses CENTRAL_AI_POSITION directly */}
+        <CentralAIUnit id="central-ai-unit" label="C2 AI" x={CENTRAL_AI_POSITION.x} y={CENTRAL_AI_POSITION.y} />
 
         {/* 🔹 Missiles */}
         {missiles.map((missile) => {
@@ -173,6 +184,7 @@ export default function GridCanvas({
             onComplete={() => setExplosions((prev) => prev.filter((_, i) => i !== idx))}
           />
         ))}
+        <FloatingMessages messages={floatingMessages} />
       </Layer>
     </Stage>
   );

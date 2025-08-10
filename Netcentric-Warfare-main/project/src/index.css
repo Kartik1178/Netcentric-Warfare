@@ -66,3 +66,18 @@
     backdrop-filter: blur(8px);
   }
 }
+
+/* Radar Icon Styles */
+.radar-icon {
+  background: transparent !important;
+  border: none !important;
+}
+
+.radar-icon div {
+  transition: all 0.2s ease;
+}
+
+.radar-icon:hover div {
+  transform: scale(1.2);
+  box-shadow: 0 0 8px rgba(0, 255, 0, 0.6);
+}

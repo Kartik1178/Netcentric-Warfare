@@ -8,9 +8,9 @@ export default function Missile({ x, y, radius = 20 }) {
   const trailRef = useRef([]);
 
   // ✅ Log coordinates for debugging
-  useEffect(() => {
-    console.log("🚀 Missile rendered at:", x, y);
-  }, [x, y]);
+  //useEffect(() => {
+    //console.log("🚀 Missile rendered at:", x, y);
+  //}, [x, y]);
 
   // ✅ Update trail history
   useEffect(() => {
