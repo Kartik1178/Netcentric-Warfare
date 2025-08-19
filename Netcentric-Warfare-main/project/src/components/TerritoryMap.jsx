@@ -152,15 +152,36 @@ export default function TerritoryMap({
       ))}
       
       <div className="absolute inset-0 w-full h-full" style={{ zIndex: 400, pointerEvents: "none" }}>
-        <GridCanvas
-          width={mapSize.width} height={mapSize.height} explosions={explosions} setExplosions={setExplosions}
-          objects={allUnitsForCanvas} // ✅ PASS THE CORRECT, FRESHLY CALCULATED DATA
-          jammerReports={jammerReports} setJammerReports={setJammerReports} currentFrequency={currentFrequency}
-          setCurrentFrequency={setCurrentFrequency} availableFrequencies={availableFrequencies} focusMode={focusMode}
-          baseZones={smoothBasePositions} zoom={konvaZoom} selectedBaseId={selectedBaseId} floatingMessages={floatingMessages}
-          onLaunchInterceptor={(launchData) => setActiveInterceptors(prev => [...prev, {id: `interceptor-${Date.now()}`, ...launchData, speed: 25}])}
-          onLogsUpdate={onLogsUpdate} mapInstance={mapInstance}
-        />
+       <div className="absolute inset-0 w-full h-full" style={{ zIndex: 400, pointerEvents: "none" }}>
+  {mapInstance && mapSize.width && mapSize.height && (
+    <GridCanvas
+      width={mapSize.width}
+      height={mapSize.height}
+      explosions={explosions}
+      setExplosions={setExplosions}
+      objects={allUnitsForCanvas}
+      jammerReports={jammerReports}
+      setJammerReports={setJammerReports}
+      currentFrequency={currentFrequency}
+      setCurrentFrequency={setCurrentFrequency}
+      availableFrequencies={availableFrequencies}
+      focusMode={focusMode}
+      baseZones={smoothBasePositions}
+      zoom={konvaZoom}
+      selectedBaseId={selectedBaseId}
+      floatingMessages={floatingMessages}
+      onLaunchInterceptor={(launchData) =>
+        setActiveInterceptors((prev) => [
+          ...prev,
+          { id: `interceptor-${Date.now()}`, ...launchData, speed: 25 },
+        ])
+      }
+      onLogsUpdate={onLogsUpdate}
+      mapInstance={mapInstance}
+    />
+  )}
+</div>
+
       </div>
     </>
   );

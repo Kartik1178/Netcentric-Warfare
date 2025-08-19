@@ -53,6 +53,7 @@ export default function GridCanvas({
   availableFrequencies,
   focusMode,
   baseZones,
+   mapInstance,
   zoom,
   selectedBaseId,
   floatingMessages, // NEW: Floating messages state
@@ -133,6 +134,8 @@ export default function GridCanvas({
                         baseId: unit.baseId,
                         objects,
                         jammerReports,
+                        
+  stageContainer: stageRef.current,
                         setJammerReports,
                         currentFrequency,
                         setCurrentFrequency,
@@ -141,7 +144,8 @@ export default function GridCanvas({
                       };
                       switch (unit.type) {
 case "radar":
-  return <Radar {...commonProps} x={unit.x} y={unit.y} />;
+  return <Radar {...commonProps} x={unit.x} y={unit.y} absoluteX={basePos.x + ox + unit.x} // stage absolute
+  absoluteY={basePos.y + oy + unit.y}/>;
                         case "antenna": return <Antenna {...commonProps} />;
                         case "jammer": return <DefenseJammer {...commonProps} />;
                         case "launcher": return <Launcher {...commonProps} />;
