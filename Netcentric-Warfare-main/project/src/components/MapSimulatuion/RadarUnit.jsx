@@ -65,15 +65,21 @@ export default function Radar({
           const antenna = objectsRef.current.find(
             (u) => u.type === "antenna" && u.baseId === baseId
           );
-          if (antenna) {
-            socket.emit("unit-signal", {
-              source: id,
-              type: "relay-to-antenna",
-              from: { x, y },
-              to: { x: antenna.x, y: antenna.y },
-              payload: { missileId: missile.id, currentX: missileX, currentY: missileY },
-            });
-          }
+        if (antenna) {
+  socket.emit("unit-signal", {
+    source: id,
+    type: "relay-to-antenna",
+    from: { x, y },
+    to: { x: antenna.x, y: antenna.y },
+    payload: { 
+      missileId: missile.id, 
+      currentX: missileX, 
+      currentY: missileY,
+      baseId: antenna.baseId // include baseId
+    },
+  });
+}
+
         }
       });
     };

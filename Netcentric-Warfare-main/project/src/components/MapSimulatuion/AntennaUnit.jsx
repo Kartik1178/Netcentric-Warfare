@@ -10,20 +10,22 @@ export default function Antenna({
   id,
   x,
   y,
-  baseId, // Corrected prop name to baseId for consistency
+  baseId,
   radius = 20,
   jammerReports,
   setJammerReports,
   currentFrequency,
   setCurrentFrequency,
   availableFrequencies,
-  emitSignal, // This prop is used for visual signals on the Konva canvas
+  emitSignal,
+  onLogsUpdate,
 }) {
   const [image] = useImage("/antenna.png");
-
   const [isJammed, setIsJammed] = useState(false);
   const isJammedRef = useRef(false);
   const jammedUntil = useRef(0);
+
+  const relayedMissilesRef = useRef(new Set()); // track missiles already relayed
 
   useEffect(() => {
     isJammedRef.current = isJammed;
@@ -51,7 +53,6 @@ export default function Antenna({
       const stillJammed = now < jammedUntil.current;
       setIsJammed(stillJammed);
 
-      // Only log when jammed state changes
       if (previousJammedState.current !== stillJammed) {
         console.log(
           `[Antenna ${id}] Jammed by ${jammer.id}? ${isAffected} → Still jammed? ${stillJammed}`
@@ -65,69 +66,57 @@ export default function Antenna({
     const handleRadarSignal = (data) => {
       const { source, type, payload } = data;
 
-      // Check if the signal is from a radar and intended for this specific antenna
-      if (type === "relay-to-antenna" && payload?.targetAntennaId === id) {
+      if (type === "relay-to-antenna" && payload?.baseId === baseId) {
+        // Only relay if this missile hasn't been sent yet
+        if (relayedMissilesRef.current.has(payload.missileId)) return;
+        relayedMissilesRef.current.add(payload.missileId);
+
         console.log(`[Antenna ${id}] Received relay-to-antenna from ${source}:`, payload);
 
         if (socket && socket.connected) {
-          console.log(`[Antenna ${id}] Scheduling threat signal relay to Central AI...`);
-
           setTimeout(() => {
             if (isJammedRef.current) {
               console.log(`[Antenna ${id}] Jammed during emission! Signal blocked.`);
               return;
             }
+
             const signalData = {
-              from: { x, y }, // Antenna's pixel coordinates
-              to: CENTRAL_AI_POSITION, // Central AI's pixel coordinates
+              from: { x, y },
+              to: CENTRAL_AI_POSITION,
               color: "red",
               source: "antenna",
               type: "relay-to-c2",
-              payload, // The original missile detection payload
+              payload,
             };
-            if (emitSignal) { // For visual line drawing on canvas
-              emitSignal(signalData);
+
+            if (emitSignal) emitSignal(signalData);
+            socket.emit("unit-signal", signalData);
+
+            if (onLogsUpdate) {
+              onLogsUpdate({
+                timestamp: new Date().toLocaleTimeString(),
+                source: `Antenna ${id.slice(-4)}`,
+                type: "relay-to-c2",
+                message: `Relayed missile ${payload.missileId.slice(-4)} to C2 AI.`,
+                payload,
+              });
             }
-            // Emit the signal to the Central AI via the socket
-            socket.emit("unit-signal", signalData); // This is the main signal to AI
+
             console.log(`[Antenna ${id}] ✅ Emitted relay-to-c2:`, payload);
-          }, 1000); // Simulate relay delay
+          }, 1000);
         }
       }
     };
 
-    // Listen for general "unit-signal" events
     socket.on("unit-signal", handleRadarSignal);
-
-    // FIX: Cleanup listener using the correct event name
     return () => socket.off("unit-signal", handleRadarSignal);
-  }, [id, x, y, emitSignal]); // Dependencies for Antenna's state and props
+  }, [id, x, y, baseId, emitSignal, onLogsUpdate]);
 
-
-  useEffect(() => {
-    const handleFrequencyChange = (data) => {
-      if (data.unitId !== id) {
-        console.log(`[Antenna ${id}] Received frequency-change from ${data.unitId}:`, data);
-      }
-    };
-
-    socket.on("frequency-change", handleFrequencyChange);
-    return () => socket.off("frequency-change", handleFrequencyChange);
-  }, [id]);
-
-  // Ensure the frequency text is always a valid string for Konva
   const frequencyDisplayText = currentFrequency != null ? `Freq: ${currentFrequency}`.trim() : "Freq: N/A";
-  const finalFrequencyText = frequencyDisplayText === "" ? "Freq: Unknown" : frequencyDisplayText;
-
 
   return (
     <Group x={x} y={y}>
-      <Circle
-        radius={radius}
-        fill={isJammed ? "gray" : "green"}
-        shadowBlur={4}
-        shadowColor="black"
-      />
+      <Circle radius={radius} fill={isJammed ? "gray" : "green"} shadowBlur={4} shadowColor="black" />
       {image && (
         <Image
           image={image}
@@ -142,13 +131,7 @@ export default function Antenna({
           }}
         />
       )}
-      <Text
-        text={finalFrequencyText} // Use the robustly generated text
-        x={-radius}
-        y={radius + 5}
-        fill="#fff"
-        fontSize={12}
-      />
+      <Text text={frequencyDisplayText || "Freq: Unknown"} x={-radius} y={radius + 5} fill="#fff" fontSize={12} />
     </Group>
   );
 }
