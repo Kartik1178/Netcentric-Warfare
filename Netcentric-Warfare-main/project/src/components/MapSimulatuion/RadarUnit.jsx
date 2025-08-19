@@ -1,236 +1,130 @@
-import React, { useEffect, useRef, useState } from "react";
-import { Image, Group, Circle, Text } from "react-konva";
+import React, { useEffect, useRef } from "react";
+import { Group, Circle, Text, Image } from "react-konva";
 import useImage from "use-image";
-import { useJammerDetection } from "../../hooks/JammerDetection";
-import { useCognitiveRadio } from "../../hooks/useCognitiveRadio";
 import socket from "../socket";
+import { latLngToStageCoords } from "../../utils/leafletToKonva";
 
 export default function Radar({
   id,
-  x,
-  y,
-  baseId, // Radar's baseId (e.g., 'srinagar-main-sub1')
-  radius = 20,
-  objects = [],
-  jammerReports,
-  setJammerReports,
+  baseId,
+  lat,
+  lng,
+  objects = [], // all units including missiles
+  mapInstance,
+  stageContainer,
+  zoom = 7,
   currentFrequency,
-  setCurrentFrequency,
-  availableFrequencies,
-  lat = null,
-  lng = null,
+  onLogsUpdate
 }) {
   const [image] = useImage("/satellite-dish.png");
   const detectedMissiles = useRef(new Set());
-  const latestObjects = useRef(objects);
-  const [isJammed, setIsJammed] = useState(false);
-  const isJammedRef = useRef(false);
-  const jammedUntil = useRef(0);
-  const previousJammedState = useRef(null);
-  const antennaRef = useRef(null); // ⚡️ NEW: Create a ref to store the antenna object
 
-  // Always update objects reference
+  const baseRadius = 150; // pixels at zoom 7
+
+  // Keep latest objects reference
+  const objectsRef = useRef(objects);
   useEffect(() => {
-    latestObjects.current = objects;
+    objectsRef.current = objects;
   }, [objects]);
 
-  // ⚡️ NEW: Effect to find and update the antenna reference
   useEffect(() => {
-    const potentialAntennas = latestObjects.current.filter(obj => obj.type === "antenna" && obj.baseId === baseId);
-    antennaRef.current = potentialAntennas[0] || null; // Store the antenna or null if not found
-    console.log(`[Radar ${id}] Initializing/Updating antennaRef: Found ${potentialAntennas.length} antennas. Current antennaRef.current: ${antennaRef.current?.id || 'null'}`);
-  }, [latestObjects, baseId]); // Re-run when objects or baseId change
+    if (!mapInstance || !stageContainer) return;
+console.log(`[Radar ${id.slice(-4)}] useEffect fired`, { mapInstance, stageContainer });
 
-
-  // Cognitive Radio hook
-  useCognitiveRadio({
-    id,
-    jammerReports,
-    availableFrequencies,
-    currentFrequency,
-    setCurrentFrequency,
-  });
-
-  // Update jammed ref
-  useEffect(() => {
-    isJammedRef.current = isJammed;
-  }, [isJammed]);
-
-  // Listen for frequency change
-  useEffect(() => {
-    const handleFrequencyChange = (data) => {
-      if (data.unitId !== id) {
-        // console.log(`[Radar ${id}] Received frequency-change:`, data);
-      }
-    };
-    socket.on("frequency-change", handleFrequencyChange);
-    return () => socket.off("frequency-change", handleFrequencyChange);
-  }, [id]);
-
-  // Jammer Detection hook
-  useJammerDetection({
-    id,
-    x,
-    y,
-    myFrequency: currentFrequency,
-    jammerHandler: (isAffected, jammer) => {
-      const now = Date.now();
-      if (isAffected) jammedUntil.current = now + 1000;
-
-      const stillJammed = now < jammedUntil.current;
-      setIsJammed(stillJammed);
-
-      if (previousJammedState.current !== stillJammed) {
-        console.log(
-          `[Radar ${id}] Jammed by ${jammer.id}? ${isAffected} → Still jammed? ${stillJammed}`
-        );
-        previousJammedState.current = stillJammed;
-      }
-    },
-    setJammerReports,
-  });
-
-  // Missile detection loop - Updated for lat/lng coordinates
-  useEffect(() => {
-    const detectionRadiusKm = 200; // Increased to 200km for initial testing
-
-    // Calculate distance between two lat/lng points in kilometers (Haversine formula)
-    const calculateDistance = (lat1, lng1, lat2, lng2) => {
-      const R = 6371; // Earth's radius in kilometers
-      const dLat = (lat2 - lat1) * Math.PI / 180;
-      const dLng = (lng2 - lng1) * Math.PI / 180;
-      const a =
-        Math.sin(dLat / 2) * Math.sin(dLat / 2) +
-        Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) *
-        Math.sin(dLng / 2) * Math.sin(dLng / 2);
-      const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
-      return R * c;
-    };
-
+  if (!mapInstance || !stageContainer) {
+    console.warn(`[Radar ${id.slice(-4)}] mapInstance or stageContainer missing`);
+    return;}
     const detectMissiles = () => {
-      if (isJammedRef.current) {
-        console.log(`[Radar ${id}] Jammed! Skipping detection.`);
-        return;
-      }
-
-      const currentObjects = latestObjects.current || [];
-      const radarLat = lat;
-      const radarLng = lng;
-
-      // 🔍 DIAGNOSTIC LOGS: Radar's own position and baseId
-      console.log(`[Radar ${id}] Running detection. My baseId: ${baseId}, My Lat: ${radarLat?.toFixed(4)}, Lng: ${radarLng?.toFixed(4)}`);
+      // Always recalc radar position
       
-      if (radarLat === null || radarLng === null) {
-        console.warn(`[Radar ${id}] Radar's lat/lng are NULL. Cannot perform geographical detection.`);
-        return;
-      }
+  console.log(`[Radar ${id.slice(-4)}] running detection loop`);
 
-      // 🔍 DIAGNOSTIC LOGS: Use antennaRef.current directly
-      const currentAntenna = antennaRef.current; 
-      if (!currentAntenna) {
-        console.warn(`[Radar ${id}] No antenna found in my base (${baseId}). Cannot relay detection.`);
-      }
+      const { x: radarX, y: radarY } = latLngToStageCoords(
+        mapInstance,
+        { lat, lng },
+        stageContainer
+      );
+      const detectionRadiusPx = baseRadius * (zoom / 7);
 
+      objectsRef.current.forEach((missile) => {
+        if (missile.type !== "missile" || missile.exploded) return;
 
-      const threats = currentObjects.filter((obj) => {
-        if (obj.type !== "missile" || obj.exploded) return false;
+        const missilePos = latLngToStageCoords(
+          mapInstance,
+          { lat: missile.lat, lng: missile.lng },
+          stageContainer
+        );
 
-        if (obj.lat == null || obj.lng == null) {
-          return false;
-        }
+        const dx = missilePos.x - radarX;
+        const dy = missilePos.y - radarY;
+        const distance = Math.sqrt(dx * dx + dy * dy);
 
-        const distance = calculateDistance(radarLat, radarLng, obj.lat, obj.lng);
-        
-        // 🔍 DIAGNOSTIC LOGS: Missile details and distance calculation
-        // console.log(`[Radar ${id}] Checking Missile ${obj.id}: Missile Lat ${obj.lat.toFixed(4)}, Lng ${obj.lng.toFixed(4)}. Distance: ${distance.toFixed(2)} km (Radius: ${detectionRadiusKm} km).`);
+        console.log(
+          `[Radar ${id.slice(-4)}] Missile ${missile.id.slice(-4)} dist: ${distance.toFixed(
+            1
+          )}, radius: ${detectionRadiusPx.toFixed(1)}`
+        );
 
-        return distance <= detectionRadiusKm;
-      });
+        if (
+          distance <= detectionRadiusPx &&
+          !detectedMissiles.current.has(missile.id)
+        ) {
+          detectedMissiles.current.add(missile.id);
 
-      threats.forEach((missile) => {
-        if (!detectedMissiles.current.has(missile.id)) {
-          let vx, vy, distance;
-
-          const dx = missile.targetLng - missile.lng;
-          const dy = missile.targetLat - missile.lat;
-          distance = Math.sqrt(dx * dx + dy * dy);
-          if (distance === 0) return;
-
-          vx = (dx / distance) * missile.speed;
-          vy = (dy / distance) * missile.speed;
-
-          console.log(
-            `[Radar ${id}] ✅ MISSILE DETECTED: ${missile.id}! Position: Lat ${missile.lat.toFixed(4)}, Lng ${missile.lng.toFixed(4)}. VelocityX: ${vx.toFixed(4)}, VelocityY: ${vy.toFixed(4)}`
-          );
-
-          // Emit detection signal with lat/lng coordinates (for TerritoryMap log)
-          socket.emit("unit-signal", {
-            source: `${id}`,
-            type: "missile-detection",
-            from: { lat: radarLat, lng: radarLng },
-            to: { lat: missile.lat, lng: missile.lng },
-            payload: {
-              missileId: missile.id,
-              detectedBy: id,
-              currentLat: missile.lat,
-              currentLng: missile.lng,
-              targetLat: missile.targetLat,
-              targetLng: missile.targetLng,
-              velocityX: vx,
-              velocityY: vy,
-              distance: calculateDistance(radarLat, radarLng, missile.lat, missile.lng),
-              timestamp: Date.now()
-            },
+          // Simulation log
+          onLogsUpdate?.({
+            timestamp: new Date().toLocaleTimeString(),
+            source: `Radar ${id.slice(-4)}`,
+            type: "missile_detected",
+            message: `Detected missile ${missile.id.slice(-4)} at ${distance.toFixed(
+              2
+            )} px.`,
+            payload: { missileId: missile.id, radarId: id, distance }
           });
 
-          // Emit to antenna if available, using antennaRef.current
-          if (currentAntenna) { // Use the variable from antennaRef.current
-            console.log(`[Radar ${id}] Attempting to relay to antenna ${currentAntenna.id} in base ${currentAntenna.baseId}.`);
+          // Relay to antenna if exists
+          const antenna = objectsRef.current.find(
+            (u) => u.type === "antenna" && u.baseId === baseId
+          );
+          if (antenna) {
             socket.emit("unit-signal", {
-              source: `${id}`,
+              source: id,
               type: "relay-to-antenna",
-              from: { x: x, y: y }, // Pixel coordinates for visual line if needed
-              to: { x: currentAntenna.x, y: currentAntenna.y }, // Pixel coordinates for visual line if needed
+              from: { x: radarX, y: radarY },
+              to: { x: antenna.x, y: antenna.y },
               payload: {
-                id: missile.id,
-                // Include pixel coordinates for Konva if needed for antenna logic
-                currentX: missile.x ?? missile.currentX,
-                currentY: missile.y ?? missile.currentY,
-                vx: parseFloat(vx.toFixed(2)),
-                vy: parseFloat(vy.toFixed(2)),
-                targetAntennaId: currentAntenna.id, // Use currentAntenna.id
-                // Include geographical coordinates for antenna to relay to C2
-                currentLat: missile.lat,
-                currentLng: missile.lng,
-                targetLat: missile.targetLat,
-                targetLng: missile.targetLng,
-                velocityX: vx,
-                velocityY: vy,
-              },
+                missileId: missile.id,
+                currentX: missilePos.x,
+                currentY: missilePos.y
+              }
             });
-          } else {
-            console.warn(`[Radar ${id}] Could not find an antenna in base ${baseId} to relay signal!`);
           }
-
-          detectedMissiles.current.add(missile.id);
         }
       });
     };
 
-    const interval = setInterval(detectMissiles, 1000); // Check every 1 second
-    return () => clearInterval(interval);
-  }, [id, lat, lng, baseId]); // ⚡️ UPDATED: Removed 'antenna' from dependencies
+    // Run detection every animation frame
+    let animationFrame;
+    const loop = () => {
+      detectMissiles();
+      animationFrame = requestAnimationFrame(loop);
+    };
+    loop();
+
+    return () => cancelAnimationFrame(animationFrame);
+  }, [mapInstance, stageContainer, lat, lng, zoom, id, baseId, onLogsUpdate]);
+
+  // Position for drawing
+  const radarPos = latLngToStageCoords(mapInstance, { lat, lng }, stageContainer);
+  const radarX = radarPos.x;
+  const radarY = radarPos.y;
+  const detectionRadiusPx = baseRadius * (zoom / 7);
 
   return (
-    <Group x={x} y={y}>
+    <Group x={radarX} y={radarY}>
+      <Circle radius={20} fill="green" shadowBlur={4} shadowColor="black" />
       <Circle
-        radius={radius}
-        fill={isJammed ? "gray" : "green"}
-        shadowBlur={4}
-        shadowColor="black"
-      />
-      <Circle
-        radius={200} // This is the visual Konva circle, not the detection radius in km
+        radius={detectionRadiusPx}
         stroke="rgba(0,255,0,0.3)"
         strokeWidth={2}
         dash={[10, 5]}
@@ -238,21 +132,21 @@ export default function Radar({
       {image && (
         <Image
           image={image}
-          x={-radius}
-          y={-radius}
-          width={radius * 2}
-          height={radius * 2}
+          x={-20}
+          y={-20}
+          width={40}
+          height={40}
           clipFunc={(ctx) => {
             ctx.beginPath();
-            ctx.arc(0, 0, radius, 0, Math.PI * 2, false);
+            ctx.arc(0, 0, 20, 0, Math.PI * 2, false);
             ctx.closePath();
           }}
         />
       )}
       <Text
         text={`Freq: ${currentFrequency}`}
-        x={-radius}
-        y={radius + 5}
+        x={-20}
+        y={25}
         fill="#fff"
         fontSize={12}
       />

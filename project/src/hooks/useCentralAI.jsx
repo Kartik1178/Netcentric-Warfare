@@ -97,7 +97,7 @@ const distance = Math.min(
 
   const speed = Math.sqrt(missile.vx ** 2 + missile.vy ** 2);
   console.log(`[CentralAI] Threat Classification → Distance: ${distance}, Speed: ${speed.toFixed(2)}`);
-  if (distance < 250 || speed > 1.5) return "HIGH";
+  if (distance < 250 || speed > 0.04) return "HIGH";
   if (distance < 400) return "MEDIUM";
   return "LOW";
 }

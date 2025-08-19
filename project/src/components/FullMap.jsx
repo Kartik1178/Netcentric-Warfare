@@ -37,6 +37,7 @@ export default function FullMap({ onLogsUpdate, newMissile, newJammer }) {
     width: window.innerWidth,
     height: window.innerHeight,
   });
+  console.log('EEE')
   const [focusMode, setFocusMode] = useState(false);
 
   const containerRef = useRef(null);

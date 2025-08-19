@@ -1,13 +1,11 @@
-export function latLngToStageCoords(map, latlng) {
-  if (!map) return { x: 0, y: 0 };
+export function latLngToStageCoords(map, latlng, stageContainer) {
+  if (!map || !stageContainer) return { x: 0, y: 0 };
 
-  // This returns pixel coordinates relative to the map container
   const point = map.latLngToContainerPoint(latlng);
-
-  console.log("📦 Raw container point (stage coords):", point);
+  const stageRect = stageContainer.getBoundingClientRect();
 
   return {
-    x: point.x, // ✅ No offset needed
-    y: point.y,
+    x: point.x - stageRect.left,
+    y: point.y - stageRect.top,
   };
 }

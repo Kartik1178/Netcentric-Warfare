@@ -2,7 +2,7 @@ import { useEffect } from "react";
 import socket from "../components/socket";
 export function useCognitiveRadio({
   id,
-  jammerReports,
+  jammerReports=[],
   availableFrequencies,
   currentFrequency,
   setCurrentFrequency,

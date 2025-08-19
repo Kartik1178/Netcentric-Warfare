@@ -7,6 +7,7 @@ import FullMap from "./components/FullMap";
 import { SDRProvider } from "./hooks/SDRContext";
 import { latLngToStageCoords } from "./utils/leafletToKonva";
 function App() {
+  console.log('APP working');
   const [selectedThreat, setSelectedThreat] = useState(null);
   const [selectedJammer, setSelectedJammer] = useState(null);
   const [logs, setLogs] = useState([]);

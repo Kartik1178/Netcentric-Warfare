@@ -11,6 +11,7 @@ import { JammerParameterModal } from './components/MapSimulatuion/JammerParamete
 import { useCentralAI } from './hooks/useCentralAI.jsx';
 import FullMap from './components/FullMap.jsx';
 function App() {
+  console.log('APP')
   const [selectedThreat, setSelectedThreat] = useState(null);
     const [selectedJammer, setSelectedJammer] = useState(null);
   const [logs, setLogs] = useState([]);

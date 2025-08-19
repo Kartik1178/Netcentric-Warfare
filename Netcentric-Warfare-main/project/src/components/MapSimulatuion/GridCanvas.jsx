@@ -140,7 +140,8 @@ export default function GridCanvas({
                         onLogsUpdate, // Pass onLogsUpdate down to units
                       };
                       switch (unit.type) {
-                        case "radar": return <Radar {...commonProps} lat={unit.lat} lng={unit.lng} />;
+case "radar":
+  return <Radar {...commonProps} x={unit.x} y={unit.y} />;
                         case "antenna": return <Antenna {...commonProps} />;
                         case "jammer": return <DefenseJammer {...commonProps} />;
                         case "launcher": return <Launcher {...commonProps} />;

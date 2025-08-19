@@ -1,186 +1,106 @@
-import React, { useEffect, useRef, useState } from "react";
-import { Image, Group, Circle, Text } from "react-konva";
-import useImage from "use-image";
-import { useJammerDetection } from "../../hooks/JammerDetection";
-import { useCognitiveRadio } from "../../hooks/useCognitiveRadio";
-import socket from "../socket";
+import React, { useEffect, useRef } from "react";
+import { Circle, Group, Text } from "react-konva";
+import socket from "../../socket";
 
-export default function Radar({
-  id,
-  x,
-  y,
-  baseId, // ✅ Use camelCase consistently
-  radius = 20,
-  objects = [], // ✅ Default empty array to prevent undefined
-  jammerReports,
-  setJammerReports,
-  currentFrequency,
-  setCurrentFrequency,
-  availableFrequencies,
-}) {
-  const [image] = useImage("/satellite-dish.png");
-  const detectedMissiles = useRef(new Set());
-  const latestObjects = useRef(objects);
-  const [isJammed, setIsJammed] = useState(false);
-  const isJammedRef = useRef(false);
-  const jammedUntil = useRef(0);
-  const previousJammedState = useRef(null);
+const RadarUnit = ({ radar, missiles }) => {
+console.log('Radar')
+  const detectionRadius = radar?.detectionRadius || 150; // 🔥 CHANGE (optional chaining for safety)
+  const intervalRef = useRef(null);
 
-  // ✅ Always update objects reference
-  useEffect(() => {
-    latestObjects.current = objects;
-  }, [objects]);
+  // 🔥 CHANGE: Normalize missiles to always be an array
+  const missileList = Array.isArray(missiles) ? missiles : [];
 
-  // ✅ Find the antenna in the same base safely
-  const antenna = latestObjects.current?.find(
-    (obj) => obj.type === "antenna" && obj.baseId === baseId
-  );
-
-  // ✅ Cognitive Radio
-  useCognitiveRadio({
-    id,
-    jammerReports,
-    availableFrequencies,
-    currentFrequency,
-    setCurrentFrequency,
+  console.log("🖥️ [Render] RadarUnit component rendered with props:", {
+    radar,
+    missilesCount: missileList.length, // 🔥 CHANGE (use missileList not missiles)
+    missiles: missileList,             // 🔥 CHANGE (use missileList not missiles)
   });
 
-  // ✅ Update jammed ref
   useEffect(() => {
-    isJammedRef.current = isJammed;
-  }, [isJammed]);
+    console.log(
+      `🟢 [RadarUnit Mount] Radar ${radar?.id} (Base ${radar?.baseId}) mounted at (${radar?.x}, ${radar?.y}) with radius ${detectionRadius}`
+    );
 
-  // ✅ Listen for frequency change
-  useEffect(() => {
-    const handleFrequencyChange = (data) => {
-      if (data.unitId !== id) {
-        console.log(`[Radar ${id}] Received frequency-change:`, data);
-      }
-    };
-    socket.on("frequency-change", handleFrequencyChange);
-    return () => socket.off("frequency-change", handleFrequencyChange);
-  }, [id]);
+    // Clear any previous interval when component re-renders
+    if (intervalRef.current) {
+      console.log(`♻️ [RadarUnit Cleanup] Clearing old interval for Radar ${radar?.id}`);
+      clearInterval(intervalRef.current);
+    }
 
-  // ✅ Jammer Detection
-  useJammerDetection({
-    id,
-    x,
-    y,
-    myFrequency: currentFrequency,
-    jammerHandler: (isAffected, jammer) => {
-      const now = Date.now();
-      if (isAffected) jammedUntil.current = now + 1000;
-
-      const stillJammed = now < jammedUntil.current;
-      setIsJammed(stillJammed);
-
-      if (previousJammedState.current !== stillJammed) {
-        console.log(
-          `[Radar ${id}] Jammed by ${jammer.id}? ${isAffected} → Still jammed? ${stillJammed}`
-        );
-        previousJammedState.current = stillJammed;
-      }
-    },
-    setJammerReports,
-  });
-
-  // ✅ Missile detection loop
-  useEffect(() => {
-    const detectionRadius = 200;
-
-    const detectMissiles = () => {
-      if (isJammedRef.current) {
-        console.log(`[Radar ${id}] Jammed! Skipping detection.`);
+    // Continuous detection loop
+    intervalRef.current = setInterval(() => {
+      if (missileList.length === 0) { // 🔥 CHANGE (use missileList instead of missiles directly)
+        console.log(`⚠️ [Radar ${radar?.id}] No missiles in array to check`);
         return;
       }
 
-      const currentObjects = latestObjects.current || [];
-      const threats = currentObjects.filter((obj) => {
-        if (obj.type !== "missile") return false;
-        const dx = obj.x - x;
-        const dy = obj.y - y;
+      console.log(
+        `🔍 [Radar ${radar?.id}] Scanning ${missileList.length} missile(s)...`
+      );
+
+      missileList.forEach((missile) => { // 🔥 CHANGE (iterate missileList)
+        if (!missile) { // 🔥 CHANGE (guard against null missile objects)
+          console.warn(`⚠️ [Radar ${radar?.id}] Encountered invalid missile:`, missile);
+          return;
+        }
+
+        console.log(
+          `➡️ [Radar ${radar?.id}] Checking missile ${missile.id} at (${missile.x}, ${missile.y})`
+        );
+
+        const dx = missile.x - radar.x;
+        const dy = missile.y - radar.y;
         const distance = Math.sqrt(dx * dx + dy * dy);
-        return distance <= detectionRadius;
-      });
 
-      threats.forEach((missile) => {
-        if (!detectedMissiles.current.has(missile.id)) {
-          const dx = missile.targetX - missile.x;
-          const dy = missile.targetY - missile.y;
-          const distance = Math.sqrt(dx * dx + dy * dy);
-          if (distance === 0) return;
+        console.log(
+          `📏 [Radar ${radar?.id}] Distance to missile ${missile.id}: ${distance.toFixed(
+            2
+          )} (threshold: ${detectionRadius})`
+        );
 
-          const vx = (dx / distance) * missile.speed;
-          const vy = (dy / distance) * missile.speed;
-
+        if (distance <= detectionRadius) {
           console.log(
-            `[Radar ${id}] Missile ${missile.id}: vx=${vx.toFixed(
-              2
-            )}, vy=${vy.toFixed(2)}`
+            `🚨 [Radar ${radar?.id}] DETECTED missile ${missile.id} at (${missile.x}, ${missile.y})`
           );
 
-          // ✅ Emit to antenna if available
-          if (antenna) {
-            socket.emit("unit-signal", {
-              source: `${id}`,
-              type: "relay-to-antenna",
-              from: { x, y },
-              to: { x: antenna.x, y: antenna.y },
-              payload: {
-                id: missile.id,
-                currentX: Math.ceil(missile.x * 100) / 100,
-                currentY: Math.ceil(missile.y * 100) / 100,
-                vx: parseFloat(vx.toFixed(2)),
-                vy: parseFloat(vy.toFixed(2)),
-                targetAntennaId: antenna.id,
-              },
-            });
-          }
-
-          detectedMissiles.current.add(missile.id);
+          // Emit to central AI / antenna
+          console.log(
+            `📡 [Radar ${radar?.id}] Emitting detection of missile ${missile.id} to antenna/centralAI`
+          );
+          socket.emit("relay-to-antenna", {
+            radarId: radar.id,
+            baseId: radar.baseId,
+            missile,
+          });
         }
       });
-    };
+    }, 300); // check every 300ms
 
-    const interval = setInterval(detectMissiles, 1000);
-    return () => clearInterval(interval);
-  }, [x, y]);
+    return () => {
+      console.log(`🛑 [RadarUnit Unmount] Clearing interval for Radar ${radar?.id}`);
+      clearInterval(intervalRef.current);
+    };
+  }, [missileList, radar]); // 🔥 CHANGE (depend on missileList instead of missiles)
 
   return (
-    <Group x={x} y={y}>
+    <Group>
       <Circle
-        radius={radius}
-        fill={isJammed ? "gray" : "green"}
-        shadowBlur={4}
-        shadowColor="black"
+        x={radar.x}
+        y={radar.y}
+        radius={detectionRadius}
+        stroke="green"
+        dash={[4, 4]}
       />
-      <Circle
-        radius={200}
-        stroke="rgba(0,255,0,0.3)"
-        strokeWidth={2}
-        dash={[10, 5]}
-      />
-      {image && (
-        <Image
-          image={image}
-          x={-radius}
-          y={-radius}
-          width={radius * 2}
-          height={radius * 2}
-          clipFunc={(ctx) => {
-            ctx.beginPath();
-            ctx.arc(0, 0, radius, 0, Math.PI * 2, false);
-            ctx.closePath();
-          }}
-        />
-      )}
+      <Circle x={radar.x} y={radar.y} radius={10} fill="darkgreen" />
       <Text
-        text={`Freq: ${currentFrequency}`}
-        x={-radius}
-        y={radius + 5}
-        fill="#fff"
+        x={radar.x + 12}
+        y={radar.y - 5}
+        text={`Radar ${radar.id}`}
         fontSize={12}
+        fill="white"
       />
     </Group>
   );
-}
+};
+
+export default RadarUnit;
