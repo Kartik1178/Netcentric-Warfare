@@ -6,6 +6,9 @@ import { useJammerDetection } from "../../hooks/JammerDetection";
 import { useCognitiveRadio } from "../../hooks/useCognitiveRadio";
 import { CENTRAL_AI_POSITION } from "../../constants/AIconstant";
 
+// Shared map to track relayed missiles per base
+const baseRelayedMissilesMap = new Map();
+
 export default function Antenna({
   id,
   x,
@@ -25,7 +28,10 @@ export default function Antenna({
   const isJammedRef = useRef(false);
   const jammedUntil = useRef(0);
 
-  const relayedMissilesRef = useRef(new Set()); // track missiles already relayed
+  // Initialize base entry if not present
+  if (!baseRelayedMissilesMap.has(baseId)) {
+    baseRelayedMissilesMap.set(baseId, new Set());
+  }
 
   useEffect(() => {
     isJammedRef.current = isJammed;
@@ -67,9 +73,11 @@ export default function Antenna({
       const { source, type, payload } = data;
 
       if (type === "relay-to-antenna" && payload?.baseId === baseId) {
-        // Only relay if this missile hasn't been sent yet
-        if (relayedMissilesRef.current.has(payload.missileId)) return;
-        relayedMissilesRef.current.add(payload.missileId);
+        const baseRelayedSet = baseRelayedMissilesMap.get(baseId);
+
+        // Deduplicate at base level
+        if (baseRelayedSet.has(payload.missileId)) return;
+        baseRelayedSet.add(payload.missileId);
 
         console.log(`[Antenna ${id}] Received relay-to-antenna from ${source}:`, payload);
 

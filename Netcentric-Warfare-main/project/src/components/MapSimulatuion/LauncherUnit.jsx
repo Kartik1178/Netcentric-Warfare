@@ -52,20 +52,31 @@ export default function Launcher({id, x, y, radius = 20, onLaunchInterceptor }) 
       const interceptY = currentY + tau * vy;
 
       // Call the onLaunchInterceptor callback after a short visual delay
-      setTimeout(() => {
-        if (onLaunchInterceptor) {
-          onLaunchInterceptor({
-            launcherX,
-            launcherY,
-            targetX: interceptX,
-            targetY: interceptY,
-            threatId,
-          });
-          console.log(`🚀 [Launcher ${id}] Interceptor launched for threat ${threatId}`);
-        } else {
-          console.warn(`[Launcher ${id}] onLaunchInterceptor callback is not provided.`);
-        }
-      }, 500); // Small delay to simulate launch sequence
+     setTimeout(() => {
+  if (onLaunchInterceptor) {
+    const launchData = {
+      launcherX,
+      launcherY,
+      targetX: interceptX,
+      targetY: interceptY,
+      threatId,
+    };
+
+    onLaunchInterceptor(launchData);
+
+    console.log("🎯 [Launcher LaunchData Prepared]", launchData, {
+      currentX,
+      currentY,
+      vx,
+      vy,
+      tau,
+    });
+    console.log(`🚀 [Launcher ${id}] Interceptor launched for threat ${threatId}`);
+  } else {
+    console.warn(`[Launcher ${id}] onLaunchInterceptor callback is not provided.`);
+  }
+}, 500);
+ // Small delay to simulate launch sequence
     };
 
     // Listen for the general "unit-signal" from the socket

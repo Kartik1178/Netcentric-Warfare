@@ -170,12 +170,16 @@ export default function TerritoryMap({
       zoom={konvaZoom}
       selectedBaseId={selectedBaseId}
       floatingMessages={floatingMessages}
-      onLaunchInterceptor={(launchData) =>
-        setActiveInterceptors((prev) => [
-          ...prev,
-          { id: `interceptor-${Date.now()}`, ...launchData, speed: 25 },
-        ])
-      }
+      onLaunchInterceptor={(launchData) => {
+  console.log("[Interceptor Received in TerritoryMap]", launchData);
+
+  setActiveInterceptors((prev) => [
+    ...prev,
+    { ...launchData, speed: 25 }, // don't overwrite id/missileId
+  ]);
+}}
+
+
       onLogsUpdate={onLogsUpdate}
       mapInstance={mapInstance}
     />

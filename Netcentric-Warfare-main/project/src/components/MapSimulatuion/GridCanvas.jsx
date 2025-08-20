@@ -148,7 +148,7 @@ case "radar":
   absoluteY={basePos.y + oy + unit.y}/>;
                         case "antenna": return <Antenna {...commonProps} />;
                         case "jammer": return <DefenseJammer {...commonProps} />;
-                        case "launcher": return <Launcher {...commonProps} />;
+                        case "launcher": return <Launcher {...commonProps} onLaunchInterceptor={onLaunchInterceptor} />;
                         default: return null;
                       }
                     })}

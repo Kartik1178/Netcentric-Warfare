@@ -4,7 +4,7 @@ import { Image, Group, Circle } from "react-konva";
 import useImage from "use-image";
 import socket from "../socket";
 
-export default function Launcher({id, x, y, radius = 20, onLaunchInterceptor }) {
+export default function Launcher({id, x, y, radius = 20, hInterceptor }) {
   const [image] = useImage("/launcher.png");
 
  useEffect(() => {

@@ -22,6 +22,9 @@ export default function Radar({
   const detectedMissiles = useRef(new Set());
   const baseRadius = 150;
 
+  // Keep last known position + timestamp for velocity calculation
+  const lastPositions = useRef(new Map());
+
   const objectsRef = useRef(objects);
   useEffect(() => {
     objectsRef.current = objects;
@@ -41,45 +44,64 @@ export default function Radar({
         const dy = missileY - absoluteY;
         const distance = Math.sqrt(dx * dx + dy * dy);
 
-        if (distance <= detectionRadiusPx && !detectedMissiles.current.has(missile.id)) {
-          detectedMissiles.current.add(missile.id);
+        if (distance <= detectionRadiusPx) {
+          // ---- compute velocity from last frame ----
+          const now = performance.now();
+          const last = lastPositions.current.get(missile.id);
+          let vx = 0, vy = 0;
 
-          // Only log globally once
-          if (!loggedMissiles.has(missile.id)) {
-            loggedMissiles.add(missile.id);
-
-            console.log(
-              `✅ Radar ${id} detected missile ${missile.id} at distance ${distance.toFixed(2)} px`
-            );
-
-            onLogsUpdate?.({
-              timestamp: new Date().toLocaleTimeString(),
-              source: `Radar ${id.slice(-4)}`,
-              type: "missile_detected",
-              message: `Detected missile ${missile.id.slice(-4)} at ${distance.toFixed(2)} px.`,
-              payload: { missileId: missile.id, radarId: id, distance },
-            });
+          if (last) {
+            const dt = (now - last.t) / 1000; // convert ms → s
+            if (dt > 0) {
+              vx = (missileX - last.x) / dt;
+              vy = (missileY - last.y) / dt;
+            }
           }
 
-          // Relay to antenna regardless of logging
+          // update stored position/time
+          lastPositions.current.set(missile.id, { x: missileX, y: missileY, t: now });
+
+          // log detection only the first time
+          if (!detectedMissiles.current.has(missile.id)) {
+            detectedMissiles.current.add(missile.id);
+
+            if (!loggedMissiles.has(missile.id)) {
+              loggedMissiles.add(missile.id);
+
+              console.log(
+                `✅ Radar ${id} detected missile ${missile.id} at distance ${distance.toFixed(2)} px`
+              );
+
+              onLogsUpdate?.({
+                timestamp: new Date().toLocaleTimeString(),
+                source: `Radar ${id.slice(-4)}`,
+                type: "missile_detected",
+                message: `Detected missile ${missile.id.slice(-4)} at ${distance.toFixed(2)} px.`,
+                payload: { missileId: missile.id, radarId: id, distance },
+              });
+            }
+          }
+
+          // Relay to antenna every time
           const antenna = objectsRef.current.find(
             (u) => u.type === "antenna" && u.baseId === baseId
           );
-        if (antenna) {
-  socket.emit("unit-signal", {
-    source: id,
-    type: "relay-to-antenna",
-    from: { x, y },
-    to: { x: antenna.x, y: antenna.y },
-    payload: { 
-      missileId: missile.id, 
-      currentX: missileX, 
-      currentY: missileY,
-      baseId: antenna.baseId // include baseId
-    },
-  });
-}
-
+          if (antenna) {
+            socket.emit("unit-signal", {
+              source: id,
+              type: "relay-to-antenna",
+              from: { x, y },
+              to: { x: antenna.x, y: antenna.y },
+              payload: {
+                missileId: missile.id,
+                currentX: missileX,
+                currentY: missileY,
+                vx,
+                vy,
+                baseId: antenna.baseId,
+              },
+            });
+          }
         }
       });
     };
