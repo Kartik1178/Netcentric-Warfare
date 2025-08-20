@@ -7,121 +7,137 @@ export function useCentralAI(units, onDecision, emitSignal, showMessageCallback)
   const lastProcessedMissileTime = useRef(new Map());
   const PROCESSING_COOLDOWN_MS = 1000;
 
+  const missileAssignments = useRef(new Map()); // missileId -> unitId
+  const unitLocks = useRef(new Map());           // unitId -> missileId
+  const processedMissiles = useRef(new Set());   // missileId already handled
+  const unitsRef = useRef(units);
+  unitsRef.current = units; // always latest units
+
   useEffect(() => {
     const handleUnitSignal = (signal) => {
-      if (signal.type === "relay-to-c2" && signal.source === "antenna") {
-        const missile = signal.payload;
-        const missileId = missile.missileId ?? missile.id;
+      if (signal.type !== "relay-to-c2" || signal.source !== "antenna") return;
 
-        const now = Date.now();
+      const missile = signal.payload;
+      const missileId = missile.missileId ?? missile.id;
+      if (!missileId) return console.error("[CentralAI] Missing missileId");
 
-        if (!missileId) {
-          console.error("❌ [CentralAI] Received a relay signal with an undefined missileId. Skipping.");
-          return;
-        }
+      // Cooldown check
+      const now = Date.now();
+      const lastTime = lastProcessedMissileTime.current.get(missileId);
+      if (lastTime && now - lastTime < PROCESSING_COOLDOWN_MS) return;
 
-        const lastTime = lastProcessedMissileTime.current.get(missileId);
-        if (lastTime && now - lastTime < PROCESSING_COOLDOWN_MS) {
-          console.log(`[CentralAI] Skipping missile ${missileId} (within cooldown).`);
-          return;
-        }
+      // Atomic lock: skip if already processing
+      if (processedMissiles.current.has(missileId)) return;
+      processedMissiles.current.add(missileId);
+      lastProcessedMissileTime.current.set(missileId, now);
 
-        lastProcessedMissileTime.current.set(missileId, now);
+      if (showMessageCallback) {
+        showMessageCallback(
+          CENTRAL_AI_POSITION.x,
+          CENTRAL_AI_POSITION.y,
+          "Analyzing Threats…",
+          2,
+          "central-ai"
+        );
+      }
 
-        console.log(`📡 CentralAI: Received missile data from Antenna ${signal.payload.targetAntennaId}:`, missile);
-        console.log("🚀 Available Launcher Units for AI:", units.filter(u => u.type === 'launcher').map(l => ({ id: l.id, x: l.x, y: l.y, lat: l.lat, lng: l.lng })));
+      let decision;
+      try {
+        decision = decideResponse(missile, unitsRef.current, missileId, unitLocks.current);
+      } catch (err) {
+        console.error(`[CentralAI] Error deciding response for missile ${missileId}`, err);
+        processedMissiles.current.delete(missileId);
+        return;
+      }
 
-        if (showMessageCallback) {
-          showMessageCallback(CENTRAL_AI_POSITION.x, CENTRAL_AI_POSITION.y, "Analyzing Threats…", 2, "central-ai");
-        }
+      if (!decision || !decision.target) {
+        processedMissiles.current.delete(missileId);
+        return;
+      }
 
-        let decision;
-        let threatLevel = "UNKNOWN";
+      const { action, target } = decision;
 
-        try {
-          decision = decideResponse(missile, units, missileId);
-          threatLevel = decision?.threatLevel || "UNKNOWN";
-        } catch (error) {
-          console.error(`❌ [CentralAI] Error during decision making for missile ${missileId}:`, error);
-          if (showMessageCallback) {
-            const shortId = missileId.slice(-4);
-            showMessageCallback(CENTRAL_AI_POSITION.x, CENTRAL_AI_POSITION.y, `AI Error for ${shortId}`, 2, "red");
-          }
-          return;
-        }
+      // Ensure unit not already assigned
+      if (unitLocks.current.has(target.id)) {
+        processedMissiles.current.delete(missileId);
+        return;
+      }
 
-        if (!decision) {
-          const shortId = missileId.slice(-4);
-          console.log("[CentralAI] No decision made for missile:", missileId);
-          if (showMessageCallback) {
-            showMessageCallback(CENTRAL_AI_POSITION.x, CENTRAL_AI_POSITION.y, `No action for ${shortId}`, 2, "central-ai");
-          }
-          return;
-        }
+      // Lock the unit and assign missile
+      unitLocks.current.set(target.id, missileId);
+      missileAssignments.current.set(missileId, target.id);
 
-        const { action, target } = decision;
+      const shortMissileId = missileId.slice(-4);
+      const shortUnitId = target.id.slice(-4);
 
-        const shortMissileId = missileId.slice(-4);
-        if (action === "intercept") {
-          socket.emit("command-launch", { missile, launcherId: target.id });
-          if (showMessageCallback) {
-            const shortLauncherId = target.id.slice(-4);
-            showMessageCallback(CENTRAL_AI_POSITION.x, CENTRAL_AI_POSITION.y, `Launching Interceptor from ${shortLauncherId} for ${shortMissileId}`, 2, "central-ai");
-          }
+      if (action === "intercept") {
+        socket.emit("command-launch", { missile, launcherId: target.id });
+        showMessageCallback?.(
+          CENTRAL_AI_POSITION.x,
+          CENTRAL_AI_POSITION.y,
+          `Launching Interceptor from ${shortUnitId} for ${shortMissileId}`,
+          2,
+          "central-ai"
+        );
 
-          const visualSignal = {
-            from: CENTRAL_AI_POSITION,
-            to: { x: target.x, y: target.y },
-            source: "central",
-            type: "interceptor-launch",
-            payload: {
-              id: missileId,
-              currentX: missile.x ?? missile.currentX,
-              currentY: missile.y ?? missile.currentY,
-              vx: missile.vx,
-              vy: missile.vy
-            }
-          };
+        const visualSignal = {
+          from: CENTRAL_AI_POSITION,
+          to: { x: target.x, y: target.y },
+          source: "central",
+          type: "interceptor-launch",
+            launcherId: target.id,   
+          payload: {
+            id: missileId,
+            currentX: missile.x ?? missile.currentX,
+            currentY: missile.y ?? missile.currentY,
+            vx: missile.vx,
+            vy: missile.vy,
+          },
+        };
 
-          emitSignal?.(visualSignal);
-          socket.emit("unit-signal", visualSignal);
+        emitSignal?.(visualSignal);
+        socket.emit("unit-signal", visualSignal);
 
-        } else if (action === "jam") {
-          socket.emit("command-jam", { missile, jammerId: target.id });
-          emitSignal?.({ from: target.id, to: missileId, type: "jamming-activate" });
-          if (showMessageCallback) {
-            const shortJammerId = target.id.slice(-4);
-            showMessageCallback(CENTRAL_AI_POSITION.x, CENTRAL_AI_POSITION.y, `Jamming activated from ${shortJammerId} for ${shortMissileId}`, 2, "central-ai");
-          }
+      } else if (action === "jam") {
+        socket.emit("command-jam", { missile, jammerId: target.id });
+        emitSignal?.({ from: target.id, to: missileId, type: "jamming-activate" });
+        showMessageCallback?.(
+          CENTRAL_AI_POSITION.x,
+          CENTRAL_AI_POSITION.y,
+          `Jamming activated from ${shortUnitId} for ${shortMissileId}`,
+          2,
+          "central-ai"
+        );
 
-        } else if (action === "monitor") {
-          if (showMessageCallback) {
-            showMessageCallback(CENTRAL_AI_POSITION.x, CENTRAL_AI_POSITION.y, `Monitoring ${shortMissileId} (Threat: ${threatLevel})`, 2, "central-ai");
-          }
-        }
+      } else if (action === "monitor") {
+        showMessageCallback?.(
+          CENTRAL_AI_POSITION.x,
+          CENTRAL_AI_POSITION.y,
+          `Monitoring ${shortMissileId} (Threat: ${decision.threatLevel})`,
+          2,
+          "central-ai"
+        );
       }
     };
 
     socket.on("unit-signal", handleUnitSignal);
     return () => socket.off("unit-signal", handleUnitSignal);
-  }, [units, onDecision, emitSignal, showMessageCallback]);
+  }, [onDecision, emitSignal, showMessageCallback]);
 }
 
-// ---- Helper functions ----
-
-function decideResponse(missile, units, missileId) {
+// ---- Helpers ----
+function decideResponse(missile, units, missileId, unitLocks) {
   const threatLevel = classifyThreat(missile, units);
-  const shortId = missileId.slice(-4);
-  console.log(`[CentralAI] Deciding response for missile ${shortId}. Threat Level: ${threatLevel}`);
 
+  // Jammers first
   if (missile.category === "jammer") {
-    const jammer = getNearestUnit(missile, units, "defense-jammer");
+    const jammer = getNearestUnit(missile, units, "defense-jammer", unitLocks);
     if (jammer) return { action: "jam", target: jammer, threatLevel };
   }
 
+  // High-threat missiles
   if (threatLevel === "HIGH") {
-    const launcher = getNearestUnit(missile, units, "launcher");
-    console.log(`[CentralAI] Threat HIGH. Nearest launcher: ${launcher ? launcher.id : 'None'}`);
+    const launcher = getNearestUnit(missile, units, "launcher", unitLocks);
     if (launcher) return { action: "intercept", target: launcher, threatLevel };
   }
 
@@ -132,7 +148,7 @@ function classifyThreat(missile, units) {
   const missilePos = { x: missile.currentX, y: missile.currentY };
   let minDistance = Infinity;
 
-  for (let unit of units.filter(u => u.type === 'radar')) {
+  for (let unit of units.filter((u) => u.type === "radar")) {
     if (unit.x != null && unit.y != null) {
       const dist = getDistance(missilePos, { x: unit.x, y: unit.y });
       if (dist < minDistance) minDistance = dist;
@@ -140,20 +156,15 @@ function classifyThreat(missile, units) {
   }
 
   const speed = Math.sqrt((missile.vx ?? 0) ** 2 + (missile.vy ?? 0) ** 2);
-  console.log(`[CentralAI] Threat Classification → Distance: ${minDistance.toFixed(2)}km, Speed: ${speed.toFixed(2)}`);
-
   if (minDistance < 3500 || speed > 0.03) return "HIGH";
   if (minDistance < 5000) return "MEDIUM";
   return "LOW";
 }
 
-function getNearestUnit(missile, units, type) {
-  const filtered = units.filter(u => u.type === type);
+function getNearestUnit(missile, units, type, unitLocks) {
+  const filtered = units.filter((u) => u.type === type && !unitLocks.has(u.id));
   let closest = null;
   let minDist = Infinity;
-
-  console.log(`[getNearestUnit] Searching nearest ${type} to missile at X:${missile.currentX?.toFixed(2)}, Y:${missile.currentY?.toFixed(2)}`);
-  console.log(`[getNearestUnit] Found ${filtered.length} units of type ${type}`);
 
   for (let unit of filtered) {
     let d;
@@ -165,7 +176,6 @@ function getNearestUnit(missile, units, type) {
       d = Infinity;
     }
 
-    console.log(`[getNearestUnit] Unit ${unit.id} distance: ${d.toFixed(2)}`);
     if (d < minDist) {
       minDist = d;
       closest = unit;
