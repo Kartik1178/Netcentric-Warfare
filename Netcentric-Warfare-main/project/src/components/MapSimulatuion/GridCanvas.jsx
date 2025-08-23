@@ -176,9 +176,15 @@ case "radar":
         })}
 
         {/* 🔹 Interceptors */}
-        {interceptors.map((intc) => (
-          <Interceptor key={intc.id} missile={intc} />
-        ))}
+       {interceptors.map((intc) => (
+  <Interceptor
+    key={intc.id}
+    x={intc.x}
+    y={intc.y}
+    radius={10}
+  />
+))}
+
 
         {/* 🔹 Explosions */}
         {explosions.map((ex, idx) => (

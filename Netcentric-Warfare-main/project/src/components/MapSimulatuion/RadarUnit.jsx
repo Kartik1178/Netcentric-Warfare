@@ -1,9 +1,9 @@
+// Radar.jsx
 import React, { useEffect, useRef } from "react";
 import { Group, Circle, Text, Image } from "react-konva";
 import useImage from "use-image";
 import socket from "../socket";
 
-// Global set to track missiles already logged in the simulation
 const loggedMissiles = new Set();
 
 export default function Radar({
@@ -22,13 +22,8 @@ export default function Radar({
   const detectedMissiles = useRef(new Set());
   const baseRadius = 150;
 
-  // Keep last known position + timestamp for velocity calculation
-  const lastPositions = useRef(new Map());
-
   const objectsRef = useRef(objects);
-  useEffect(() => {
-    objectsRef.current = objects;
-  }, [objects]);
+  useEffect(() => { objectsRef.current = objects; }, [objects]);
 
   useEffect(() => {
     const detectMissiles = () => {
@@ -37,41 +32,21 @@ export default function Radar({
       objectsRef.current.forEach((missile) => {
         if (missile.type !== "missile" || missile.exploded) return;
 
-        const missileX = missile.x;
-        const missileY = missile.y;
-
-        const dx = missileX - absoluteX;
-        const dy = missileY - absoluteY;
+        const dx = missile.x - absoluteX;
+        const dy = missile.y - absoluteY;
         const distance = Math.sqrt(dx * dx + dy * dy);
 
         if (distance <= detectionRadiusPx) {
-          // ---- compute velocity from last frame ----
-          const now = performance.now();
-          const last = lastPositions.current.get(missile.id);
-          let vx = 0, vy = 0;
+          // Use velocity already computed by TerritoryMap
+          const vx = missile.vx ?? 0;
+          const vy = missile.vy ?? 0;
 
-          if (last) {
-            const dt = (now - last.t) / 1000; // convert ms → s
-            if (dt > 0) {
-              vx = (missileX - last.x) / dt;
-              vy = (missileY - last.y) / dt;
-            }
-          }
-
-          // update stored position/time
-          lastPositions.current.set(missile.id, { x: missileX, y: missileY, t: now });
-
-          // log detection only the first time
           if (!detectedMissiles.current.has(missile.id)) {
             detectedMissiles.current.add(missile.id);
 
             if (!loggedMissiles.has(missile.id)) {
               loggedMissiles.add(missile.id);
-
-              console.log(
-                `✅ Radar ${id} detected missile ${missile.id} at distance ${distance.toFixed(2)} px`
-              );
-
+              console.log(`✅ Radar ${id} detected missile ${missile.id} at ${distance.toFixed(2)} px`);
               onLogsUpdate?.({
                 timestamp: new Date().toLocaleTimeString(),
                 source: `Radar ${id.slice(-4)}`,
@@ -94,8 +69,8 @@ export default function Radar({
               to: { x: antenna.x, y: antenna.y },
               payload: {
                 missileId: missile.id,
-                currentX: missileX,
-                currentY: missileY,
+                currentX: missile.x,
+                currentY: missile.y,
                 vx,
                 vy,
                 baseId: antenna.baseId,
@@ -106,7 +81,7 @@ export default function Radar({
       });
     };
 
-    const interval = setInterval(detectMissiles, 200); // check every 200ms
+    const interval = setInterval(detectMissiles, 200);
     return () => clearInterval(interval);
   }, [x, y, zoom, id, baseId, absoluteX, absoluteY, onLogsUpdate]);
 

@@ -9,7 +9,7 @@ export const Interceptor = ({
   // heading, // Heading is not directly used for rendering a simple circle/image
   // collisionRadius // Not directly used for rendering the interceptor itself
 }) => {
-  const [image] = useImage("/interceptor.png"); // Assuming you have an interceptor.png image
+  const [image] = useImage("/missile.png"); // Assuming you have an interceptor.png image
 
   return (
     <Group x={x} y={y}>
