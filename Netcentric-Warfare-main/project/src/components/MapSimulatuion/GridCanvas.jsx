@@ -188,12 +188,15 @@ case "radar":
 
         {/* 🔹 Explosions */}
         {explosions.map((ex, idx) => (
-          <Explosion
-            key={idx}
-            x={ex.x}
-            y={ex.y}
-            onComplete={() => setExplosions((prev) => prev.filter((_, i) => i !== idx))}
-          />
+         <Explosion
+  key={idx}
+  x={ex.x}
+  y={ex.y}
+  onAnimationEnd={() => 
+    setExplosions((prev) => prev.filter((_, i) => i !== idx))
+  }
+/>
+
         ))}
         <FloatingMessages messages={floatingMessages} />
       </Layer>

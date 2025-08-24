@@ -53,7 +53,7 @@ export default function Launcher({ id, x, y, radius = 20, onLaunchInterceptor })
           };
           onLaunchInterceptor(launchData);
           console.log("🎯 [Launcher LaunchData Prepared]", launchData, { currentX, currentY, vx, vy, tau });
-
+         console.log("[DEBUG] Interceptor Created:", interceptorData);
 
           console.log(`🚀 [Launcher ${id}] Interceptor launched for threat ${threatId}`);
         }

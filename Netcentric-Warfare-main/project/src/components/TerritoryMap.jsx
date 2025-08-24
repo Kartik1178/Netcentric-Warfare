@@ -12,6 +12,7 @@ import { useLeafletToKonvaTransform } from "../hooks/useLeafletToKonvaTransform"
 import { useSmoothPositions } from "../hooks/useSmoothPositions";
 import { useSubBaseUnits } from "../hooks/useSubBaseUnits";
 import { getStyledBaseIcon } from "../utils/transparentIcon";
+import { normalizeLaunchToLatLng } from "../utils/coordinateUtils";
 
 const LAUNCH_ZONES = [
   { id: "pakistan-north", polygon: [[35.0, 74.5],[34.0, 74.0],[33.5, 73.5],[33.5, 74.5]], color: "rgba(255,0,0,0.3)" },
@@ -27,7 +28,6 @@ function calculateVelocity(startLat, startLng, targetLat, targetLng, speed = 0.0
   let dy = targetLat - startLat;
   let dist = Math.sqrt(dx * dx + dy * dy);
 
-  // Assign random tiny direction if too close
   if (dist < 0.0001) {
     const angle = Math.random() * 2 * Math.PI;
     dx = Math.cos(angle) * 0.001;
@@ -63,6 +63,12 @@ export default function TerritoryMap({
   const [explosions, setExplosions] = useState([]);
   const spawnedMissiles = useRef(new Set());
   const [activeInterceptors, setActiveInterceptors] = useState([]);
+
+  // 🔹 Keep ref synced with latest globalObjects for interceptor updates
+  const globalObjectsRef = useRef(globalObjects);
+  useEffect(() => {
+    globalObjectsRef.current = globalObjects;
+  }, [globalObjects]);
 
   const { pixelPositions, zoom: konvaZoom } = useLeafletToKonvaTransform({
     mapInstance, baseData: BASES, mapSize,
@@ -118,48 +124,83 @@ export default function TerritoryMap({
     };
 
     console.log(`[Missile Init] Missile ${newMissile.id} -> vx: ${vx}, vy: ${vy}`);
-
     setGlobalObjects((prev) => [...prev, missileObj]);
     spawnedMissiles.current.add(newMissile.id);
   }, [newMissile]);
 
   // Animate missiles & interceptors
-  useEffect(() => {
-    const animationInterval = setInterval(() => {
-      setGlobalObjects((prev) =>
-        prev.map((obj) => {
-          if (obj.type === "missile" && !obj.exploded) {
-            const dx = obj.targetLng - obj.lng;
-            const dy = obj.targetLat - obj.lat;
-            const dist = Math.sqrt(dx * dx + dy * dy);
-            if (dist < 0.001) return { ...obj, reached: true };
-
-            return {
-              ...obj,
-              lat: obj.lat + obj.vy, // use stored velocity
-              lng: obj.lng + obj.vx,
-            };
-          }
-          return obj;
-        })
-      );
-      setActiveInterceptors((prev) =>
-        prev.map((intc) => {
-          if (intc.exploded || intc.reached) return intc;
-          const dx = intc.targetX - intc.x;
-          const dy = intc.targetY - intc.y;
+ useEffect(() => {
+  const interval = setInterval(() => {
+    // Move missiles
+    setGlobalObjects((prev) =>
+      prev.map((obj) => {
+        if (obj.type === "missile" && !obj.exploded) {
+          const dx = obj.targetLng - obj.lng;
+          const dy = obj.targetLat - obj.lat;
           const dist = Math.sqrt(dx * dx + dy * dy);
-          if (dist < 5) return { ...intc, reached: true };
-          return { ...intc, x: intc.x + (dx / dist) * intc.speed, y: intc.y + (dy / dist) * intc.speed };
-        })
-      );
-    }, 30);
-    return () => clearInterval(animationInterval);
-  }, []);
+          if (dist < 0.001) return { ...obj, reached: true };
+
+          return { ...obj, lat: obj.lat + obj.vy, lng: obj.lng + obj.vx };
+        }
+        return obj;
+      })
+    );
+
+    // Move interceptors (use latest missiles from ref)
+    setActiveInterceptors((prevInterceptors) =>
+      prevInterceptors.map((intc) => {
+        if (intc.exploded || intc.reached) return intc;
+
+        const targetMissile = globalObjectsRef.current.find(
+          (o) => o.type === "missile" && o.id === intc.targetId && !o.exploded
+        );
+        if (!targetMissile) return { ...intc, exploded: true };
+
+        const { vx, vy } = calculateVelocity(
+          intc.lat, intc.lng,
+          targetMissile.lat, targetMissile.lng,
+          intc.speed
+        );
+
+        const dx = targetMissile.lng - intc.lng;
+        const dy = targetMissile.lat - intc.lat;
+        const dist = Math.sqrt(dx * dx + dy * dy);
+
+        // --- ADD THIS BLOCK ---
+         if (dist < 0.05) {
+          // Place explosion visually on the map
+          if (mapInstance) {
+            const point = mapInstance.latLngToContainerPoint([
+              targetMissile.lat,
+              targetMissile.lng,
+            ]);
+            setExplosions((prev) => [
+              ...prev,
+              { x: point.x, y: point.y },
+            ]);
+          }
+          // Mark both as exploded
+          setGlobalObjects((prev) =>
+            prev.map((obj) =>
+              obj.id === targetMissile.id ? { ...obj, exploded: true } : obj
+            )
+          );
+          return { ...intc, exploded: true };
+        }
+
+        return { ...intc, vx, vy, lat: intc.lat + vy, lng: intc.lng + vx };
+      })
+    );
+  }, 30);
+
+  return () => clearInterval(interval);
+}, []);
+
 
   const baseUnitsToScale = globalObjects.filter((o) => o.type !== "missile" && o.type !== "interceptor");
   const scaledBaseUnits = useSubBaseUnits(baseUnitsToScale, konvaZoom);
 
+  // Convert missiles to pixel positions for drawing
   const missilesInPixels = globalObjects
     .filter((o) => o.type === "missile" && !o.exploded)
     .map((obj) => {
@@ -169,7 +210,16 @@ export default function TerritoryMap({
     })
     .filter(Boolean);
 
-  const interceptorsInPixels = activeInterceptors.filter((o) => o.type === "interceptor" && !o.exploded);
+  // Convert interceptors to pixel positions for drawing
+  const interceptorsInPixels = activeInterceptors
+    .filter((o) => o.type === "interceptor" && !o.exploded)
+    .map((obj) => {
+      if (!mapInstance || obj.lat == null || obj.lng == null) return null;
+      const point = mapInstance.latLngToContainerPoint([obj.lat, obj.lng]);
+      return { ...obj, x: point?.x || 0, y: point?.y || 0 };
+    })
+    .filter(Boolean);
+
   const allUnitsForCanvas = [...scaledBaseUnits, ...missilesInPixels, ...interceptorsInPixels];
 
   useCentralAI(
@@ -196,6 +246,7 @@ export default function TerritoryMap({
             }}
           />
         ))}
+
       {LAUNCH_ZONES.map((zone) => (
         <Polygon
           key={zone.id}
@@ -222,26 +273,42 @@ export default function TerritoryMap({
             zoom={konvaZoom}
             selectedBaseId={selectedBaseId}
             floatingMessages={floatingMessages}
- onLaunchInterceptor={(launchData) => {
-  console.log("[Interceptor Received in TerritoryMap]", launchData);
+            onLaunchInterceptor={(launchData) => {
+              const norm = normalizeLaunchToLatLng(launchData, mapInstance);
+              if (!norm) return;
 
-  setActiveInterceptors((prev) => [
-    ...prev,
-    {
-      ...launchData,
-      threatId: launchData.threatId,
-      x: launchData.launcherX,  // <-- initialize starting position
-      y: launchData.launcherY,
-      speed: 25,
-      type: "interceptor",
-      exploded: false,
-      reached: false,
-    },
-  ]);
-  console.log("[DEBUG] Interceptor state after launch:", activeInterceptors);
+              console.log("[LAUNCH] raw:", launchData);
+              console.log("[LAUNCH] normalized:", norm);
+              console.log(
+                "[MISSILES] count:",
+                globalObjectsRef.current.filter((o) => o.type === "missile").length
+              );
 
-}}
+              const { vx, vy } = calculateVelocity(
+                norm.launcherLat, norm.launcherLng,
+                norm.targetLat, norm.targetLng,
+                0.08
+              );
 
+              setActiveInterceptors((prev) => [
+                ...prev,
+                {
+                  id: `interceptor-${Date.now()}`,
+                  threatId: norm.threatId,
+                  type: "interceptor",
+                  lat: norm.launcherLat,
+                  lng: norm.launcherLng,
+                  targetId: norm.threatId,
+                  speed: 0.08,
+                  vx,
+                  vy,
+                  exploded: false,
+                  reached: false,
+                },
+              ]);
+
+              console.log("[INTERCEPTORS] after push:", activeInterceptors.length + 1);
+            }}
             onLogsUpdate={onLogsUpdate}
             mapInstance={mapInstance}
           />
