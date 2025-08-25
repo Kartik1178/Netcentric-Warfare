@@ -1,5 +1,10 @@
+// Outside component (shared state)
+let activeVisualAntennaId = null;
+let activeVisualTimeout = null;
+const baseRelayedMissilesMap = new Map();
+
 import React, { useEffect, useRef, useState } from "react";
-import { Image, Group, Circle, Text } from "react-konva";
+import { Image, Group, Circle, Text, Line } from "react-konva";
 import useImage from "use-image";
 import socket from "../socket";
 import { useJammerDetection } from "../../hooks/JammerDetection";
@@ -7,173 +12,210 @@ import { useCognitiveRadio } from "../../hooks/useCognitiveRadio";
 import { CENTRAL_AI_POSITION } from "../../constants/AIconstant";
 
 export default function Antenna({
-  id,
-  x,
-  y,
-  baseId, // Corrected prop name to baseId for consistency
-  radius = 20,
-  jammerReports,
-  setJammerReports,
-  currentFrequency,
-  setCurrentFrequency,
-  availableFrequencies,
-  emitSignal, // This prop is used for visual signals on the Konva canvas
-  onLogsUpdate // NEW: onLogsUpdate prop for sending logs to the UI
+  id,
+  x,
+  y,
+  baseId,
+  zoom,
+  radius,
+  jammerReports,
+  setJammerReports,
+  currentFrequency,
+  setCurrentFrequency,
+  availableFrequencies,
+  emitSignal,
+  onLogsUpdate,
 }) {
-  const [image] = useImage("/antenna.png");
+  const [image] = useImage("/antenna.png");
+  const [isJammed, setIsJammed] = useState(false);
+  const [signalAnimations, setSignalAnimations] = useState([]);
 
-  const [isJammed, setIsJammed] = useState(false);
-  const isJammedRef = useRef(false);
-  const jammedUntil = useRef(0);
+  const isJammedRef = useRef(false);
+  const jammedUntil = useRef(0);
 
-  useEffect(() => {
-    isJammedRef.current = isJammed;
-  }, [isJammed]);
+  if (!baseRelayedMissilesMap.has(baseId)) baseRelayedMissilesMap.set(baseId, new Set());
 
-  useCognitiveRadio({
-    id,
-    jammerReports,
-    availableFrequencies,
-    currentFrequency,
-    setCurrentFrequency,
-  });
+  useEffect(() => { isJammedRef.current = isJammed; }, [isJammed]);
 
-  const previousJammedState = useRef(null);
+  useCognitiveRadio({
+    id, jammerReports, availableFrequencies, currentFrequency, setCurrentFrequency
+  });
 
-  useJammerDetection({
-    id,
-    x,
-    y,
-    myFrequency: currentFrequency,
-    jammerHandler: (isAffected, jammer) => {
-      const now = Date.now();
-      if (isAffected) jammedUntil.current = now + 1000;
+  const previousJammedState = useRef(null);
 
-      const stillJammed = now < jammedUntil.current;
-      setIsJammed(stillJammed);
+  useJammerDetection({
+    id, x, y,
+    myFrequency: currentFrequency,
+    jammerHandler: (isAffected) => {
+      const now = Date.now();
+      if (isAffected) jammedUntil.current = now + 1000;
+      const stillJammed = now < jammedUntil.current;
+      setIsJammed(stillJammed);
+      previousJammedState.current = stillJammed;
+    },
+  });
 
-      // Only log when jammed state changes
-      if (previousJammedState.current !== stillJammed) {
-        console.log(
-          `[Antenna ${id}] Jammed by ${jammer.id}? ${isAffected} → Still jammed? ${stillJammed}`
-        );
-        previousJammedState.current = stillJammed;
-      }
-    },
-  });
+  // Radar relay handler
+  useEffect(() => {
+    const handleRadarSignal = (data) => {
+      const { type, payload } = data;
+      if (type === "relay-to-antenna" && payload?.baseId === baseId) {
+        const relayedSet = baseRelayedMissilesMap.get(baseId);
+        if (relayedSet.has(payload.missileId)) return;
+        relayedSet.add(payload.missileId);
 
-  useEffect(() => {
-    const handleRadarSignal = (data) => {
-      const { source, type, payload } = data;
+        // Assign active antenna
+        if (!activeVisualAntennaId) {
+          activeVisualAntennaId = id;
+          clearTimeout(activeVisualTimeout);
+          activeVisualTimeout = setTimeout(() => {
+            activeVisualAntennaId = null;
+          }, 2000);
+        }
 
-      // Check if the signal is from a radar and intended for this specific antenna
-      if (type === "relay-to-antenna" && payload?.targetAntennaId === id) {
-        console.log(`[Antenna ${id}] Received relay-to-antenna from ${source}:`, payload);
-        // NEW: Send log to simulation UI when signal is received from radar
-        onLogsUpdate?.({
+        // Incoming pulse
+        if (activeVisualAntennaId === id) {
+          setSignalAnimations((prev) => [
+            ...prev,
+            { type: "receive", color: "lime", progress: 0 }
+          ]);
+        }
+
+        setTimeout(() => {
+          if (isJammedRef.current) return;
+
+          const signalData = {
+            from: { x, y },
+            to: CENTRAL_AI_POSITION,
+            color: "red",
+            source: "antenna",
+            type: "relay-to-c2",
+            payload,
+          };
+
+          emitSignal?.(signalData);
+          socket.emit("unit-signal", signalData);
+
+          if (activeVisualAntennaId === id) {
+            setSignalAnimations((prev) => [
+              ...prev,
+              {
+                type: "send",
+                color: "red",
+                progress: 0,
+                target: CENTRAL_AI_POSITION
+              }
+            ]);
+          }
+
+          onLogsUpdate?.({
             timestamp: new Date().toLocaleTimeString(),
-            source: `Antenna ${id.substring(id.length - 4)}`,
-            type: "signal_received",
-            message: `Received threat from ${source.substring(source.length - 4)}`,
-            payload: { missileId: payload.id, sourceUnit: source }
-        });
+            source: `Antenna ${id.slice(-4)}`,
+            type: "relay-to-c2",
+            message: `Relayed missile ${payload.missileId.slice(-4)} to C2 AI.`,
+            payload,
+          });
+        }, 800);
+      }
+    };
 
-        if (socket && socket.connected) {
-          console.log(`[Antenna ${id}] Scheduling threat signal relay to Central AI...`);
+    socket.on("unit-signal", handleRadarSignal);
+    return () => socket.off("unit-signal", handleRadarSignal);
+  }, [id, x, y, baseId, emitSignal, onLogsUpdate]);
 
-          setTimeout(() => {
-            if (isJammedRef.current) {
-              console.log(`[Antenna ${id}] Jammed during emission! Signal blocked.`);
-              // NEW: Log blocked signal to simulation UI
-              onLogsUpdate?.({
-                  timestamp: new Date().toLocaleTimeString(),
-                  source: `Antenna ${id.substring(id.length - 4)}`,
-                  type: "signal_blocked",
-                  message: `Jammed! Signal for ${payload.id.substring(payload.id.length - 4)} blocked.`,
-                  payload: { missileId: payload.id, status: "blocked" }
-              });
-              return;
-            }
-            const signalData = {
-              from: { x, y }, // Antenna's pixel coordinates
-              to: CENTRAL_AI_POSITION, // Central AI's pixel coordinates
-              color: "red",
-              source: "antenna",
-              type: "relay-to-c2",
-              payload, // The original missile detection payload
-            };
-            if (emitSignal) { // For visual line drawing on canvas
-              emitSignal(signalData);
-            }
-            // Emit the signal to the Central AI via the socket
-            socket.emit("unit-signal", signalData); // This is the main signal to AI
-            console.log(`[Antenna ${id}] ✅ Emitted relay-to-c2:`, payload);
-            // NEW: Send log to simulation UI when signal is emitted to C2
-            onLogsUpdate?.({
-                timestamp: new Date().toLocaleTimeString(),
-                source: `Antenna ${id.substring(id.length - 4)}`,
-                type: "signal_relayed",
-                message: `Relayed threat ${payload.id.substring(payload.id.length - 4)} to Central AI.`,
-                payload: { missileId: payload.id, targetUnit: "CentralAI" }
-            });
-          }, 1000); // Simulate relay delay
-        }
-      }
-    };
+  // Animate signals smoothly
+  useEffect(() => {
+    if (!signalAnimations.length) return;
+    let animFrame;
+    const animate = () => {
+      setSignalAnimations((prev) =>
+        prev
+          .map((sig) => ({
+            ...sig,
+            progress: sig.progress + 0.03, // Faster animation
+          }))
+          .filter((sig) => sig.progress <= 1)
+      );
+      animFrame = requestAnimationFrame(animate);
+    };
+    animFrame = requestAnimationFrame(animate);
+    return () => cancelAnimationFrame(animFrame);
+  }, [signalAnimations]);
 
-    // Listen for general "unit-signal" events
-    socket.on("unit-signal", handleRadarSignal);
+  const frequencyDisplayText =
+    currentFrequency != null ? `Freq: ${currentFrequency}` : "Freq: N/A";
 
-    // FIX: Cleanup listener using the correct event name
-    return () => socket.off("unit-signal", handleRadarSignal);
-  }, [id, x, y, emitSignal, onLogsUpdate]); // Added onLogsUpdate to dependencies
+  return (
+    <Group x={x} y={y}>
+      {/* Base antenna circle */}
+      <Circle
+        radius={radius}
+        fill={isJammed ? "gray" : "green"}
+        shadowBlur={6}
+        shadowColor={isJammed ? "darkgray" : "lime"}
+      />
 
+      {/* Antenna image */}
+      {image && (
+        <Image
+          image={image}
+          x={-radius}
+          y={-radius}
+          width={radius * 2}
+          height={radius * 2}
+          clipFunc={(ctx) => {
+            ctx.beginPath();
+            ctx.arc(0, 0, radius, 0, Math.PI * 2);
+            ctx.closePath();
+          }}
+        />
+      )}
 
-  useEffect(() => {
-    const handleFrequencyChange = (data) => {
-      if (data.unitId !== id) {
-        console.log(`[Antenna ${id}] Received frequency-change from ${data.unitId}:`, data);
-      }
-    };
+      {/* Frequency label */}
+      <Text
+        text={frequencyDisplayText}
+        x={-radius}
+        y={radius + 5}
+        fill="#fff"
+        fontSize={Math.max(10, radius * 0.7)}
+        align="center"
+        width={radius * 2}
+      />
 
-    socket.on("frequency-change", handleFrequencyChange);
-    return () => socket.off("frequency-change", handleFrequencyChange);
-  }, [id]);
-
-  // Ensure the frequency text is always a valid string for Konva
-  const frequencyDisplayText = currentFrequency != null ? `Freq: ${currentFrequency}`.trim() : "Freq: N/A";
-  const finalFrequencyText = frequencyDisplayText === "" ? "Freq: Unknown" : frequencyDisplayText;
-
-
-  return (
-    <Group x={x} y={y}>
-      <Circle
-        radius={radius}
-        fill={isJammed ? "gray" : "green"}
-        shadowBlur={4}
-        shadowColor="black"
-      />
-      {image && (
-        <Image
-          image={image}
-          x={-radius}
-          y={-radius}
-          width={radius * 2}
-          height={radius * 2}
-          clipFunc={(ctx) => {
-            ctx.beginPath();
-            ctx.arc(0, 0, radius, 0, Math.PI * 2, false);
-            ctx.closePath();
-          }}
-        />
-      )}
-      <Text
-        text={finalFrequencyText} // Use the robustly generated text
-        x={-radius}
-        y={radius + 5}
-        fill="#fff"
-        fontSize={12}
-      />
-    </Group>
-  );
+      {/* Signal visuals */}
+      {activeVisualAntennaId === id &&
+        signalAnimations.map((sig, idx) => {
+          if (sig.type === "receive") {
+            const r = radius + sig.progress * 25;
+            return (
+              <Circle
+                key={idx}
+                radius={r}
+                stroke={sig.color}
+                strokeWidth={3}
+                opacity={1 - sig.progress}
+                shadowBlur={15}
+                shadowColor={sig.color}
+              />
+            );
+          } else if (sig.type === "send" && sig.target) {
+            const tx = sig.target.x - x;
+            const ty = sig.target.y - y;
+            return (
+              <Line
+                key={idx}
+                points={[0, 0, tx * sig.progress, ty * sig.progress]}
+                stroke={sig.color}
+                strokeWidth={4}
+                opacity={1 - sig.progress * 0.8}
+                shadowColor={sig.color}
+                shadowBlur={20}
+                dash={[10, 5]}
+              />
+            );
+          }
+          return null;
+        })}
+    </Group>
+  );
 }

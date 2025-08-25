@@ -82,14 +82,27 @@ export default function TerritoryMap({
       return;
     }
     const generateUnitsForBase = (baseId) => {
-      const baseData = BASES.find((b) => b.id === baseId);
-      if (!baseData) return [];
-      return Array.from({ length: 4 }).flatMap((_, i) => {
-        const subBaseId = `${baseId}-sub${i + 1}`;
-        const localUnits = generateBaseUnits(subBaseId, baseData.type, 60);
-        return localUnits.map((u) => ({ ...u, localX: u.x, localY: u.y }));
-      });
-    };
+  const baseData = BASES.find((b) => b.id === baseId);
+  if (!baseData) return [];
+
+  // 🔹 Scale radius dynamically based on zoom
+  const dynamicRadius = konvaZoom >= 15 ? 80 : konvaZoom >= 13 ? 70 : 60;
+
+  console.log(`[Unit Generation] Base: ${baseId}, Zoom: ${konvaZoom}, Radius: ${dynamicRadius}`);
+
+  return Array.from({ length: 4 }).flatMap((_, i) => {
+    const subBaseId = `${baseId}-sub${i + 1}`;
+    const localUnits = generateBaseUnits(subBaseId, baseData.type, dynamicRadius);
+
+    // Preserve local positions for further scaling
+    return localUnits.map((u) => ({
+      ...u,
+      localX: u.x,
+      localY: u.y,
+    }));
+  });
+};
+
     const allUnits = focusMode && selectedBaseId
       ? generateUnitsForBase(selectedBaseId)
       : BASES.flatMap((base) => generateUnitsForBase(base.id));
@@ -274,41 +287,57 @@ export default function TerritoryMap({
             selectedBaseId={selectedBaseId}
             floatingMessages={floatingMessages}
             onLaunchInterceptor={(launchData) => {
-              const norm = normalizeLaunchToLatLng(launchData, mapInstance);
-              if (!norm) return;
+  const norm = normalizeLaunchToLatLng(launchData, mapInstance);
+  if (!norm) return;
 
-              console.log("[LAUNCH] raw:", launchData);
-              console.log("[LAUNCH] normalized:", norm);
-              console.log(
-                "[MISSILES] count:",
-                globalObjectsRef.current.filter((o) => o.type === "missile").length
-              );
+  console.group(`🚀 [INTERCEPTOR LAUNCH INIT] Threat: ${norm.threatId}`);
+  console.log("Launcher Position (lat/lng):", {
+    lat: norm.launcherLat,
+    lng: norm.launcherLng,
+  });
+  console.log("Target Missile Position (lat/lng):", {
+    lat: norm.targetLat,
+    lng: norm.targetLng,
+  });
 
-              const { vx, vy } = calculateVelocity(
-                norm.launcherLat, norm.launcherLng,
-                norm.targetLat, norm.targetLng,
-                0.08
-              );
+  const { vx, vy } = calculateVelocity(
+    norm.launcherLat,
+    norm.launcherLng,
+    norm.targetLat,
+    norm.targetLng,
+    0.08
+  );
+  console.log("Calculated velocity vector:", { vx, vy });
 
-              setActiveInterceptors((prev) => [
-                ...prev,
-                {
-                  id: `interceptor-${Date.now()}`,
-                  threatId: norm.threatId,
-                  type: "interceptor",
-                  lat: norm.launcherLat,
-                  lng: norm.launcherLng,
-                  targetId: norm.threatId,
-                  speed: 0.08,
-                  vx,
-                  vy,
-                  exploded: false,
-                  reached: false,
-                },
-              ]);
+  const interceptorId = `interceptor-${Date.now()}`;
+  setActiveInterceptors((prev) => [
+    ...prev,
+    {
+      id: interceptorId,
+      threatId: norm.threatId,
+      type: "interceptor",
+      lat: norm.launcherLat,
+      lng: norm.launcherLng,
+      targetId: norm.threatId,
+      speed: 0.08,
+      vx,
+      vy,
+      exploded: false,
+      reached: false,
+    },
+  ]);
 
-              console.log("[INTERCEPTORS] after push:", activeInterceptors.length + 1);
-            }}
+  console.log("Initial Interceptor Spawn (lat/lng):", {
+    lat: norm.launcherLat,
+    lng: norm.launcherLng,
+    id: interceptorId,
+  });
+  console.log("Interceptor count (after push):", activeInterceptors.length + 1);
+  console.groupEnd();
+}}
+
+
+
             onLogsUpdate={onLogsUpdate}
             mapInstance={mapInstance}
           />

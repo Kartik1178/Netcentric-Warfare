@@ -15,9 +15,13 @@ import FloatingMessages from "./FloatingMessages";
 function BaseGridBackground({ radius = 150, cellSize = 30 }) {
   const lines = [];
   for (let x = -radius; x <= radius; x += cellSize)
-    lines.push(<Line key={`v-${x}`} points={[x, -radius, x, radius]} stroke="rgba(0,255,255,0.3)" strokeWidth={1} />);
+    lines.push(
+      <Line key={`v-${x}`} points={[x, -radius, x, radius]} stroke="rgba(0,255,255,0.3)" strokeWidth={1} />
+    );
   for (let y = -radius; y <= radius; y += cellSize)
-    lines.push(<Line key={`h-${y}`} points={[-radius, y, radius, y]} stroke="rgba(0,255,255,0.3)" strokeWidth={1} />);
+    lines.push(
+      <Line key={`h-${y}`} points={[-radius, y, radius, y]} stroke="rgba(0,255,255,0.3)" strokeWidth={1} />
+    );
 
   return (
     <Group>
@@ -40,6 +44,51 @@ function BaseGridBackground({ radius = 150, cellSize = 30 }) {
   );
 }
 
+const scaleByZoom = (zoom, base, min, max) => {
+  const factor = zoom / 10;
+  return Math.min(Math.max(base * factor, min), max);
+};
+
+// Adaptive grid logic
+const getGridSize = (zoom) => {
+  if (zoom < 12) return 2;
+  if (zoom < 16) return 3;
+  return 4;
+};
+
+const getCellPositions = (gridSize, radius) => {
+  const spacing = (radius * 2) / gridSize;
+  const positions = [];
+  const start = -radius + spacing / 2;
+  for (let row = 0; row < gridSize; row++) {
+    for (let col = 0; col < gridSize; col++) {
+      const x = start + col * spacing;
+      const y = start + row * spacing;
+      positions.push([x, y]);
+    }
+  }
+  return positions;
+};
+
+// Dynamic sub-base offsets with consistent spacing
+const getSubBaseOffsets = (baseType, subBaseRadius) => {
+  const padding = Math.max(10, subBaseRadius * 0.3);
+  const spacing = subBaseRadius * 2 + padding;
+
+  if (baseType === "Air" || baseType === "Sea") {
+    return [
+      [0, -spacing],
+      [spacing * Math.cos(Math.PI / 6), spacing * Math.sin(Math.PI / 6)],
+      [-spacing * Math.cos(Math.PI / 6), spacing * Math.sin(Math.PI / 6)],
+    ];
+  } else {
+    return [
+      [0, -spacing / 2],
+      [0, spacing / 2],
+    ];
+  }
+};
+
 export default function GridCanvas({
   width,
   height,
@@ -53,13 +102,13 @@ export default function GridCanvas({
   availableFrequencies,
   focusMode,
   baseZones,
-   mapInstance,
+  mapInstance,
   zoom,
   selectedBaseId,
-  floatingMessages, // NEW: Floating messages state
-  onBaseClick, // This seems to be unused, can be removed
-  onLaunchInterceptor, // This is an unused prop, but let's keep it for now
-  onLogsUpdate // NEW: onLogsUpdate prop for logging
+  floatingMessages,
+  onBaseClick,
+  onLaunchInterceptor,
+  onLogsUpdate,
 }) {
   const stageRef = useRef();
 
@@ -67,14 +116,38 @@ export default function GridCanvas({
   const interceptors = objects.filter((o) => o.type === "interceptor");
   const baseUnits = objects.filter((o) => o.type !== "missile" && o.type !== "interceptor");
 
-  const showDetails = zoom >= 7;
+  const renderUnit = (unit, offsetX, offsetY, basePos, unitRadius) => {
+    const commonProps = {
+      key: unit.id,
+      id: unit.id,
+      x: unit.x,
+      y: unit.y,
+      baseId: unit.baseId,
+      objects,
+      jammerReports,
+      stageContainer: stageRef.current,
+      setJammerReports,
+      currentFrequency,
+      setCurrentFrequency,
+      availableFrequencies,
+      onLogsUpdate,
+      radius: unitRadius,
+    };
 
-  // 🔹 Log stage size to confirm canvas is correct
-  useEffect(() => {
-    console.log(`🖥 GridCanvas Stage Size: ${width} x ${height}`);
-  }, [width, height]);
+    switch (unit.type) {
+      case "radar":
+        return <Radar {...commonProps} absoluteX={basePos.x + offsetX + unit.x} absoluteY={basePos.y + offsetY + unit.y} />;
+      case "antenna":
+        return <Antenna {...commonProps} zoom={zoom} radius={unitRadius} />;
+      case "jammer":
+        return <DefenseJammer {...commonProps} />;
+      case "launcher":
+        return <Launcher {...commonProps} onLaunchInterceptor={onLaunchInterceptor} />;
+      default:
+        return null;
+    }
+  };
 
-  // 🔹 Smooth base marker animation
   useEffect(() => {
     if (!stageRef.current) return;
     Object.entries(baseZones).forEach(([baseId, basePos]) => {
@@ -86,118 +159,69 @@ export default function GridCanvas({
   }, [baseZones]);
 
   return (
-    <Stage
-      ref={stageRef}
-      width={width}
-      height={height}
-      style={{
-        position: "absolute",
-        top: 0,
-        left: 0,
-        zIndex: 500,
-        background: "rgba(0,0,0,0.3)", // Reverted to semi-transparent black
-        pointerEvents: "none",
-      }}
-    >
+    <Stage ref={stageRef} width={width} height={height} style={{ position: "absolute", top: 0, left: 0, zIndex: 500, background: "rgba(0,0,0,0.3)", pointerEvents: "none" }}>
       <Layer>
-        {/* ... existing Bases & Sub-Bases rendering logic ... */}
         {Object.entries(baseZones).map(([baseId, basePos]) => {
           if (focusMode && selectedBaseId && baseId !== selectedBaseId) return null;
-          if (!basePos || !showDetails) return null;
+          if (!basePos) return null;
 
-          const subBaseSpacing = zoom >= 15 ? 300 : zoom >= 13 ? 200 : 120;
-          const subBaseRadius = zoom >= 15 ? 70 : zoom >= 13 ? 55 : 45;
-          const cellSize = zoom >= 15 ? 25 : 30;
+          const unitRadius = scaleByZoom(zoom, 12, 6, 20);
+          const cellSize = scaleByZoom(zoom, 30, 20, 40);
+          const baseRadius = scaleByZoom(zoom, 40, 25, 60);
+          const subBaseRadius = zoom >= 12 ? baseRadius : baseRadius * 0.66;
 
-          const subBaseOffsets = [
-            [0, -subBaseSpacing],
-            [subBaseSpacing, 0],
-            [0, subBaseSpacing],
-            [-subBaseSpacing, 0],
-          ];
+          const mainBaseObj = baseUnits.find((u) => u.baseId === baseId);
+          const baseType = mainBaseObj?.type || "Air";
+
+          const showSubBases = zoom >= 10;
+          const showUnits = zoom >= 8;
 
           return (
             <Group key={baseId} x={basePos.x} y={basePos.y}>
-              {subBaseOffsets.map(([ox, oy], i) => {
-                const subBaseId = `${baseId}-sub${i + 1}`;
-                const subUnits = baseUnits.filter((u) => u.baseId === subBaseId);
+              {/* Show sub-bases only if zoom >= 10 */}
+              {showSubBases &&
+                getSubBaseOffsets(baseType, subBaseRadius).map(([ox, oy], i) => {
+                  const subBaseId = `${baseId}-sub${i + 1}`;
+                  const subUnits = baseUnits.filter((u) => u.baseId === subBaseId);
 
-                return (
-                  <Group key={subBaseId} x={ox} y={oy}>
-                    <BaseGridBackground radius={subBaseRadius} cellSize={cellSize} />
-                    {subUnits.map((unit, idx) => {
-                      const commonProps = {
-                        key: unit.id || idx,
-                        id: unit.id,
-                        x: unit.x,
-                        y: unit.y,
-                        baseId: unit.baseId,
-                        objects,
-                        jammerReports,
-                        
-  stageContainer: stageRef.current,
-                        setJammerReports,
-                        currentFrequency,
-                        setCurrentFrequency,
-                        availableFrequencies,
-                        onLogsUpdate, // Pass onLogsUpdate down to units
-                      };
-                      switch (unit.type) {
-case "radar":
-  return <Radar {...commonProps} x={unit.x} y={unit.y} absoluteX={basePos.x + ox + unit.x} // stage absolute
-  absoluteY={basePos.y + oy + unit.y}/>;
-                        case "antenna": return <Antenna {...commonProps} />;
-                        case "jammer": return <DefenseJammer {...commonProps} />;
-                        case "launcher": return <Launcher {...commonProps} onLaunchInterceptor={onLaunchInterceptor} />;
-                        default: return null;
-                      }
-                    })}
-                  </Group>
-                );
-              })}
+                  const gridSize = getGridSize(zoom);
+                  const cellPositions = getCellPositions(gridSize, subBaseRadius);
+                  const unitCellRadius = cellPositions.length ? (subBaseRadius * 2) / (gridSize * 2) : unitRadius;
+
+                  return (
+                    <Group key={subBaseId} x={ox} y={oy}>
+                      <BaseGridBackground radius={subBaseRadius} cellSize={cellSize} />
+                      {subUnits.map((unit, idx) => {
+                        const [cx, cy] = cellPositions[idx % cellPositions.length];
+                        return renderUnit({ ...unit, x: cx, y: cy }, ox, oy, basePos, unitCellRadius);
+                      })}
+                    </Group>
+                  );
+                })}
+
+              {/* Show main base units only for zoom >=8 */}
+              {!showSubBases && showUnits &&
+                baseUnits.filter((u) => u.baseId === baseId).map((unit) =>
+                  renderUnit(unit, 0, 0, basePos, unitRadius)
+                )}
             </Group>
           );
         })}
 
-        {/* 🚀 Central AI Visual Element now uses CENTRAL_AI_POSITION directly */}
+        {/* Central AI */}
         <CentralAIUnit id="central-ai-unit" label="C2 AI" x={CENTRAL_AI_POSITION.x} y={CENTRAL_AI_POSITION.y} />
 
-        {/* 🔹 Missiles */}
-        {missiles.map((missile) => {
+        {/* Missiles */}
+        {missiles.map((m) => <Missile key={m.id} x={m.x} y={m.y} radius={scaleByZoom(zoom, 20, 8, 30)} />)}
 
-          return (
-            <Missile
-              key={missile.id}
-              x={missile.x}
-              y={missile.y}
-              radius={20}
-            />
-          );
-        })}
+        {/* Interceptors */}
+        {interceptors.map((i) => <Interceptor key={i.id} x={i.x} y={i.y} radius={scaleByZoom(zoom, 10, 6, 20)} />)}
 
-        {/* 🔹 Interceptors */}
-       {interceptors.map((intc) => (
-  <Interceptor
-    key={intc.id}
-    x={intc.x}
-    y={intc.y}
-    radius={10}
-  />
-))}
-
-
-        {/* 🔹 Explosions */}
+        {/* Explosions */}
         {explosions.map((ex, idx) => (
-         <Explosion
-  key={idx}
-  x={ex.x}
-  y={ex.y}
-  onAnimationEnd={() => 
-    setExplosions((prev) => prev.filter((_, i) => i !== idx))
-  }
-/>
-
+          <Explosion key={idx} x={ex.x} y={ex.y} onAnimationEnd={() => setExplosions(prev => prev.filter((_, i) => i !== idx))} />
         ))}
+
         <FloatingMessages messages={floatingMessages} />
       </Layer>
     </Stage>

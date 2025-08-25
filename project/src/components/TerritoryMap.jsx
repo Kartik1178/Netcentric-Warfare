@@ -65,7 +65,8 @@ console.log('Territory')
         if (!baseData) return [];
         return Array.from({ length: 4 }).flatMap((_, i) => {
             const subBaseId = `${baseId}-sub${i + 1}`;
-            const localUnits = generateBaseUnits(subBaseId, baseData.type, 60);
+            const dynamicRadius = Math.max(40, konvaZoom * 15); 
+            const localUnits = generateBaseUnits(subBaseId, baseData.type, dynamicRadius);
             return localUnits.map((u) => ({ ...u, localX: u.x, localY: u.y }));
         });
     };

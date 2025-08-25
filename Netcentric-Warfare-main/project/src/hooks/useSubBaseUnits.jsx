@@ -10,6 +10,7 @@ export function useSubBaseUnits(units, zoom) {
   return useMemo(() => {
     if (!units || units.length === 0) return [];
 
+
     // 🔹 Scale unit positions dynamically based on zoom
     const spacingScale = zoom >= 15 ? 1.5 : zoom >= 13 ? 1.2 : 1;
 
