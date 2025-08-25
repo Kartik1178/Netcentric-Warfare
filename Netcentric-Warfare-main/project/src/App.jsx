@@ -1,5 +1,6 @@
 import { useState } from "react";
-
+import { DroneParameterModal } from "./components/DroneParameterModal";
+import { ArtilleryParameterModal } from "./components/ArtilleryParameterModal";
 import { ThreatDashboard } from "./components/ThreatDashboard";
 import { SimulationLog } from "./components/SimulationLog";
 import { MissileParameterModal } from "./components/MissileParameterModal";
@@ -22,26 +23,21 @@ function App() {
     setLogs((prevLogs) => [...prevLogs.slice(-49), newLog]);
   };
 
- 
 const handleMapMissileLaunch = ({ latlng, nearestBase }) => {
-  if (!window.__leafletMapInstance) {
-    console.warn("⚠️ Map instance not ready yet.");
-    return;
-  }
+  if (!window.__leafletMapInstance) return;
 
   const map = window.__leafletMapInstance;
-
   const startPixel = latLngToStageCoords(map, latlng);
   const targetPixel = latLngToStageCoords(map, {
     lat: nearestBase.coords[0],
     lng: nearestBase.coords[1],
   });
-console.log("🔵 Converted Konva startPixel:", startPixel);
-console.log("🔵 Converted Konva targetPixel:", targetPixel);
-  const missile = {
-    id: `missile-${Date.now()}`,
-    name: selectedThreat?.name || "Missile",
+
+  const threat = {
+    id: `${mode}-${Date.now()}`,
+    name: selectedThreat?.name || mode.charAt(0).toUpperCase() + mode.slice(1),
     baseId: nearestBase.id,
+    type: mode, // 🔹 important
     altitude,
     startPosition: startPixel,
     targetPosition: targetPixel,
@@ -49,31 +45,49 @@ console.log("🔵 Converted Konva targetPixel:", targetPixel);
     timestamp: Date.now(),
   };
 
-  console.log("🚀 Missile spawn:", missile);
-  setNewMissile(missile);
+  console.log("🚀 Threat spawn:", threat);
+  if (mode === "missile") setNewMissile(threat);
+  else setNewJammer(threat); // or a new state if needed
 
   handleLogUpdate({
     timestamp: new Date().toLocaleTimeString(),
     source: "App",
     type: "launch",
-    message: `Missile '${missile.name}' launched from (${latlng.lat.toFixed(2)}, ${latlng.lng.toFixed(2)})`,
-    payload: missile,
+    message: `${mode.charAt(0).toUpperCase() + mode.slice(1)} '${threat.name}' launched from (${latlng.lat.toFixed(2)}, ${latlng.lng.toFixed(2)})`,
+    payload: threat,
   });
 
   setSelectedThreat(null);
   setStep("idle");
 };
 
-  const handleThreatSelect = (item, type = "threat") => {
-    if (type === "jammer") {
-      setMode("jammer");
-      setSelectedJammer(item);
-    } else {
-      setMode("missile");
-      setSelectedThreat(item);
-      setStep("altitude");
-    }
-  };
+
+const handleThreatSelect = (item, type = "threat") => {
+  if (type === "jammer") {
+    setMode("jammer");
+    setSelectedJammer(item);
+    return;
+  }
+
+  const itemType = item.type.toLowerCase();
+
+  if (itemType.includes("drone")) {
+    setMode("drone");
+    setSelectedThreat(item);
+    setStep("altitude");
+  } else if (itemType.includes("artillery") || itemType.includes("cannon") || itemType.includes("howitzer")) {
+    setMode("artillery");
+    setSelectedThreat(item);
+    setStep("altitude");
+  } else {
+    // Everything else is treated as missile
+    setMode("missile");
+    setSelectedThreat(item);
+    setStep("altitude");
+  }
+};
+
+
 
   const clearLogs = () => setLogs([]);
 
@@ -107,19 +121,51 @@ console.log("🔵 Converted Konva targetPixel:", targetPixel);
       </div>
 
       {/* Missile Modal */}
-      {selectedThreat && step === "altitude" && (
-        <MissileParameterModal
-          threat={selectedThreat}
-          onClose={() => {
-            setSelectedThreat(null);
-            setStep("idle");
-          }}
-          onSimulate={(missileData) => {
-            setAltitude(missileData.altitude);
-            setStep("launch");
-          }}
-        />
-      )}
+     {/* Missile Modal */}
+{selectedThreat && step === "altitude" && mode === "missile" && (
+  <MissileParameterModal
+    threat={selectedThreat}
+    onClose={() => {
+      setSelectedThreat(null);
+      setStep("idle");
+    }}
+    onSimulate={(data) => {
+      setAltitude(data.altitude);
+      setStep("launch");
+    }}
+  />
+)}
+
+{/* Drone Modal */}
+{selectedThreat && step === "altitude" && mode === "drone" && (
+  <DroneParameterModal
+    drone={selectedThreat}
+    onClose={() => {
+      setSelectedThreat(null);
+      setStep("idle");
+    }}
+    onSimulate={(data) => {
+      setAltitude(data.altitude);
+      setStep("launch");
+    }}
+  />
+)}
+
+{/* Artillery Modal */}
+{selectedThreat && step === "altitude" && mode === "artillery" && (
+  <ArtilleryParameterModal
+    artillery={selectedThreat}
+    onClose={() => {
+      setSelectedThreat(null);
+      setStep("idle");
+    }}
+    onSimulate={(data) => {
+      setAltitude(data.altitude);
+      setStep("launch");
+    }}
+  />
+)}
+
 
       {/* Jammer Modal */}
       {selectedJammer && (
