@@ -33,11 +33,14 @@ const handleMapMissileLaunch = ({ latlng, nearestBase }) => {
     lng: nearestBase.coords[1],
   });
 
+  // Safety: ensure type is always valid
+  const threatType = ["jammer", "drone", "artillery"].includes(mode) ? mode : "missile";
+
   const threat = {
-    id: `${mode}-${Date.now()}`,
-    name: selectedThreat?.name || mode.charAt(0).toUpperCase() + mode.slice(1),
+    id: `${threatType}-${Date.now()}`,
+    name: selectedThreat?.name || threatType.charAt(0).toUpperCase() + threatType.slice(1),
     baseId: nearestBase.id,
-    type: mode, // 🔹 important
+    type: threatType, // ✅ guaranteed
     altitude,
     startPosition: startPixel,
     targetPosition: targetPixel,
@@ -46,20 +49,25 @@ const handleMapMissileLaunch = ({ latlng, nearestBase }) => {
   };
 
   console.log("🚀 Threat spawn:", threat);
-  if (mode === "missile") setNewMissile(threat);
-  else setNewJammer(threat); // or a new state if needed
 
+  // Assign to appropriate state
+  if (threatType === "missile") setNewMissile(threat);
+  else setNewJammer(threat);
+
+  // Log the launch
   handleLogUpdate({
     timestamp: new Date().toLocaleTimeString(),
     source: "App",
     type: "launch",
-    message: `${mode.charAt(0).toUpperCase() + mode.slice(1)} '${threat.name}' launched from (${latlng.lat.toFixed(2)}, ${latlng.lng.toFixed(2)})`,
+    message: `${threatType.charAt(0).toUpperCase() + threatType.slice(1)} '${threat.name}' launched from (${latlng.lat.toFixed(2)}, ${latlng.lng.toFixed(2)})`,
     payload: threat,
   });
 
+  // Reset selections
   setSelectedThreat(null);
   setStep("idle");
 };
+
 
 
 const handleThreatSelect = (item, type = "threat") => {

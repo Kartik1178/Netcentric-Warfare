@@ -22,7 +22,6 @@ const LAUNCH_ZONES = [
   { id: "indian-ocean", polygon: [[10,72],[7,72],[6,74],[7,76],[10,75]], color: "rgba(255,0,100,0.2)" },
 ];
 
-// Ensure non-zero velocity
 function calculateVelocity(startLat, startLng, targetLat, targetLng, speed = 0.05) {
   let dx = targetLng - startLng;
   let dy = targetLat - startLat;
@@ -36,20 +35,13 @@ function calculateVelocity(startLat, startLng, targetLat, targetLng, speed = 0.0
   return { vx: (dx / dist) * speed, vy: (dy / dist) * speed };
 }
 
-export default function TerritoryMap({
-  onLogsUpdate,
-  newMissile,
-  newDrone,
-  newArtillery,
-  zoom,
-  center,
-  mapInstance,
-  mapSize,
-  focusMode,
-  setFocusMode,
-  selectedBaseId,
-  setSelectedBaseId,
-}) {
+export default function TerritoryMap(props) {
+  const {
+    onLogsUpdate, newMissile, newDrone, newArtillery,
+    zoom, center, mapInstance, mapSize,
+    focusMode, setFocusMode, selectedBaseId, setSelectedBaseId
+  } = props;
+
   const { jammerReports, setJammerReports, currentFrequency, setCurrentFrequency, availableFrequencies } = useSDR();
   const showMessageRef = useRef(null);
   const [floatingMessages, showMessage] = useFloatingMessages();
@@ -59,14 +51,13 @@ export default function TerritoryMap({
   const [explosions, setExplosions] = useState([]);
   const spawnedObjects = useRef(new Set());
   const [activeInterceptors, setActiveInterceptors] = useState([]);
-
   const globalObjectsRef = useRef(globalObjects);
   useEffect(() => { globalObjectsRef.current = globalObjects; }, [globalObjects]);
 
   const { pixelPositions, zoom: konvaZoom } = useLeafletToKonvaTransform({ mapInstance, baseData: BASES, mapSize });
   const smoothBasePositions = useSmoothPositions(pixelPositions, 300);
 
-  // Generate base units
+  // Generate base units with logs
   useEffect(() => {
     if (!pixelPositions || Object.keys(pixelPositions).length === 0) return;
 
@@ -75,23 +66,30 @@ export default function TerritoryMap({
       if (!baseData) return [];
       const dynamicRadius = konvaZoom >= 15 ? 80 : konvaZoom >= 13 ? 70 : 60;
 
-      return Array.from({ length: 4 }).flatMap((_, i) => {
+      const units = Array.from({ length: 4 }).flatMap((_, i) => {
         const subBaseId = `${baseId}-sub${i + 1}`;
         const localUnits = generateBaseUnits(subBaseId, baseData.type, dynamicRadius);
-        return localUnits.map((u) => ({ ...u, localX: u.x, localY: u.y }));
+        const mappedUnits = localUnits.map(u => ({ ...u, localX: u.x, localY: u.y }));
+        console.log(`[Base Units] Base:${baseId}, SubBase:${subBaseId}, Units:`, mappedUnits);
+        return mappedUnits;
       });
+
+      return units;
     };
 
     const allUnits = focusMode && selectedBaseId
       ? generateUnitsForBase(selectedBaseId)
-      : BASES.flatMap((b) => generateUnitsForBase(b.id));
+      : BASES.flatMap(b => generateUnitsForBase(b.id));
 
-    setGlobalObjects(prev => [...prev.filter(o => ["missile","drone","artillery","interceptor"].includes(o.type)), ...allUnits]);
+    setGlobalObjects(prev => [
+      ...prev.filter(o => ["missile","drone","artillery","interceptor"].includes(o.type)),
+      ...allUnits
+    ]);
   }, [pixelPositions, konvaZoom, focusMode, selectedBaseId]);
 
   const VELOCITY_BY_TYPE = { missile: 0.05, drone: 0.02, artillery: 0.015 };
 
-  // Spawn new objects
+  // Spawn new objects with logs
   useEffect(() => {
     const newObjs = [newMissile, newDrone, newArtillery].filter(Boolean);
     newObjs.forEach(objData => {
@@ -99,39 +97,34 @@ export default function TerritoryMap({
       const speed = VELOCITY_BY_TYPE[objData.type] || 0.05;
       const { vx, vy } = calculateVelocity(objData.startLat, objData.startLng, objData.targetLat, objData.targetLng, speed);
 
-      setGlobalObjects(prev => [...prev, {
-        id: objData.id,
-        type: objData.type,
-        lat: objData.startLat,
-        lng: objData.startLng,
-        targetLat: objData.targetLat,
-        targetLng: objData.targetLng,
-        baseId: objData.baseId,
-        speed, vx, vy, exploded: false
-      }]);
+      console.log(`[Spawn Object] id:${objData.id} type:${objData.type} start:(${objData.startLat},${objData.startLng}) target:(${objData.targetLat},${objData.targetLng}) vx:${vx} vy:${vy}`);
 
+      setGlobalObjects(prev => [...prev, {
+        id: objData.id, type: objData.type,
+        lat: objData.startLat, lng: objData.startLng,
+        targetLat: objData.targetLat, targetLng: objData.targetLng,
+        baseId: objData.baseId, speed, vx, vy, exploded: false
+      }]);
       spawnedObjects.current.add(objData.id);
     });
   }, [newMissile, newDrone, newArtillery]);
 
-  // Animate objects & interceptors
+  // Animate objects & interceptors with logs
   useEffect(() => {
     const interval = setInterval(() => {
-      // Move missiles/drones/artillery
-      setGlobalObjects(prev =>
-        prev.map(obj => {
-          if (["missile","drone","artillery"].includes(obj.type) && !obj.exploded) {
-            const dx = obj.targetLng - obj.lng;
-            const dy = obj.targetLat - obj.lat;
-            const dist = Math.sqrt(dx*dx + dy*dy);
-            if (dist < 0.001) return {...obj, reached:true};
-            return {...obj, lat: obj.lat + obj.vy, lng: obj.lng + obj.vx};
-          }
-          return obj;
-        })
-      );
+      setGlobalObjects(prev => prev.map(obj => {
+        if (["missile","drone","artillery"].includes(obj.type) && !obj.exploded) {
+          const dx = obj.targetLng - obj.lng;
+          const dy = obj.targetLat - obj.lat;
+          const dist = Math.sqrt(dx*dx + dy*dy);
+          if (dist < 0.001) return {...obj, reached:true};
+          const newObj = {...obj, lat: obj.lat + obj.vy, lng: obj.lng + obj.vx};
+          console.log(`[Move Object] id:${obj.id} type:${obj.type} lat:${newObj.lat.toFixed(5)} lng:${newObj.lng.toFixed(5)} dist:${dist.toFixed(5)}`);
+          return newObj;
+        }
+        return obj;
+      }));
 
-      // Move interceptors
       setActiveInterceptors(prev => prev.map(intc => {
         if (intc.exploded || intc.reached) return intc;
         const targetObj = globalObjectsRef.current.find(o => o.id === intc.targetId && !o.exploded);
@@ -142,6 +135,8 @@ export default function TerritoryMap({
         const dy = targetObj.lat - intc.lat;
         const dist = Math.sqrt(dx*dx + dy*dy);
 
+        console.log(`[Interceptor Move] id:${intc.id} lat:${intc.lat.toFixed(5)} lng:${intc.lng.toFixed(5)} target:${targetObj.id} dist:${dist.toFixed(5)}`);
+
         if (dist < 0.05) {
           if (mapInstance) {
             const point = mapInstance.latLngToContainerPoint([targetObj.lat, targetObj.lng]);
@@ -150,7 +145,6 @@ export default function TerritoryMap({
           setGlobalObjects(prev => prev.map(o => o.id === targetObj.id ? {...o, exploded:true} : o));
           return {...intc, exploded:true};
         }
-
         return {...intc, vx, vy, lat: intc.lat+vy, lng: intc.lng+vx};
       }));
     }, 30);
@@ -161,11 +155,13 @@ export default function TerritoryMap({
   const baseUnitsToScale = globalObjects.filter(o => !["missile","drone","artillery","interceptor"].includes(o.type));
   const scaledBaseUnits = useSubBaseUnits(baseUnitsToScale, konvaZoom);
 
+  // Project objects to pixel coordinates with logs
   const projectObjects = globalObjects
     .filter(o => ["missile","drone","artillery"].includes(o.type) && !o.exploded)
     .map(obj => {
       if (!mapInstance) return null;
       const point = mapInstance.latLngToContainerPoint([obj.lat,obj.lng]);
+      console.log(`[Project Object] id:${obj.id} type:${obj.type} lat:${obj.lat.toFixed(5)} lng:${obj.lng.toFixed(5)} x:${point?.x.toFixed(2)} y:${point?.y.toFixed(2)}`);
       return {...obj, x:point?.x||0, y:point?.y||0};
     }).filter(Boolean);
 
@@ -174,6 +170,7 @@ export default function TerritoryMap({
     .map(obj => {
       if (!mapInstance || obj.lat==null || obj.lng==null) return null;
       const point = mapInstance.latLngToContainerPoint([obj.lat,obj.lng]);
+      console.log(`[Project Interceptor] id:${obj.id} lat:${obj.lat.toFixed(5)} lng:${obj.lng.toFixed(5)} x:${point?.x.toFixed(2)} y:${point?.y.toFixed(2)}`);
       return {...obj, x:point?.x||0, y:point?.y||0};
     }).filter(Boolean);
 
@@ -223,6 +220,7 @@ export default function TerritoryMap({
               if(!norm) return;
               const { vx, vy } = calculateVelocity(norm.launcherLat, norm.launcherLng, norm.targetLat, norm.targetLng, 0.08);
               const interceptorId = `interceptor-${Date.now()}`;
+              console.log(`[Launch Interceptor] id:${interceptorId} from (${norm.launcherLat},${norm.launcherLng}) to target:${norm.threatId}`);
               setActiveInterceptors(prev => [...prev, {
                 id: interceptorId,
                 threatId: norm.threatId,

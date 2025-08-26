@@ -65,14 +65,16 @@ function MapClickHandler({ step, onMissileLaunch }) {
       const fixedTarget = { id: "base-fixed", coords: [28.6139, 77.209] };
 
       // ✅ Launch missile with the new lat/lng-based structure
-      onMissileLaunch({
-        id: `missile-${Date.now()}`,
-        baseId: fixedTarget.id,
-        startLat: e.latlng.lat,
-        startLng: e.latlng.lng,
-        targetLat: fixedTarget.coords[0],
-        targetLng: fixedTarget.coords[1],
-      });
+     onMissileLaunch({
+  id: `missile-${Date.now()}`,
+  baseId: fixedTarget.id,
+  startLat: e.latlng.lat,
+  startLng: e.latlng.lng,
+  targetLat: fixedTarget.coords[0],
+  targetLng: fixedTarget.coords[1],
+  type: "missile", // 🔹 MUST include this
+});
+
     },
   });
   return null;
