@@ -97,29 +97,29 @@ const getSubBaseOffsets = (baseType, subBaseRadius) => {
     ];
   }
 };
+export default function GridCanvas(props) {
+  const {
+    width,
+    height,
+    objects,
+    zoom,
+    baseZones,
+    floatingMessages,
+    explosions,
+    setExplosions,
+    jammerReports,
+    setJammerReports,
+    currentFrequency,
+    setCurrentFrequency,
+    availableFrequencies,
+    focusMode,
+    selectedBaseId,
+    onLaunchInterceptor,
+    onLogsUpdate,
+  } = props;
 
-export default function GridCanvas({
-  width,
-  height,
-  explosions,
-  setExplosions,
-  objects,
-  jammerReports,
-  setJammerReports,
-  currentFrequency,
-  setCurrentFrequency,
-  availableFrequencies,
-  focusMode,
-  baseZones,
-  mapInstance,
-  zoom,
-  selectedBaseId,
-  floatingMessages,
-  onBaseClick,
-  onLaunchInterceptor,
-  onLogsUpdate,
-}) {
   const stageRef = useRef();
+  const [tooltip, setTooltip] = useState({ visible: false, text: "", x: 0, y: 0 });
 
   const missiles = objects.filter((o) => o.type === "missile");
   const interceptors = objects.filter((o) => o.type === "interceptor");
@@ -143,47 +143,48 @@ export default function GridCanvas({
       radius: unitRadius,
     };
 
+    // --- Hover handlers ---
+    const onMouseEnter = (e) => {
+      e.target.getStage().container().style.cursor = "pointer";
+      const baseName = unit.baseId.split("-")[0]; // extract base name from sub-base
+      setTooltip({
+        visible: true,
+        text: `${unit.type.toUpperCase()} | ID: ${unit.id} | Base: ${baseName}`,
+        x: e.target.x() + offsetX + basePos.x,
+        y: e.target.y() + offsetY + basePos.y,
+      });
+    };
+
+    const onMouseLeave = (e) => {
+      e.target.getStage().container().style.cursor = "default";
+      setTooltip((prev) => ({ ...prev, visible: false }));
+    };
+
     if (unit.type === "drone" && subBaseCenter) {
       const { x, y } = useOrbit(subBaseCenter.x, subBaseCenter.y, unitRadius * 2, 0.03);
-      return <DroneUnit {...commonProps} x={x} y={y} />;
+      return <DroneUnit {...commonProps} x={x} y={y} onMouseEnter={onMouseEnter} onMouseLeave={onMouseLeave} />;
     }
 
     switch (unit.type) {
       case "radar":
-        return <Radar {...commonProps} absoluteX={basePos.x + offsetX + unit.x} absoluteY={basePos.y + offsetY + unit.y} />;
+        return <Radar {...commonProps} absoluteX={basePos.x + offsetX + unit.x} absoluteY={basePos.y + offsetY + unit.y} onMouseEnter={onMouseEnter} onMouseLeave={onMouseLeave} />;
       case "antenna":
-        return <Antenna {...commonProps} zoom={zoom} radius={unitRadius} />;
+        return <Antenna {...commonProps} zoom={zoom} radius={unitRadius} onMouseEnter={onMouseEnter} onMouseLeave={onMouseLeave} />;
       case "jammer":
-        return <DefenseJammer {...commonProps} />;
+        return <DefenseJammer {...commonProps} onMouseEnter={onMouseEnter} onMouseLeave={onMouseLeave} />;
       case "launcher":
-        return <Launcher {...commonProps} onLaunchInterceptor={onLaunchInterceptor} />;
+        return <Launcher {...commonProps} onLaunchInterceptor={onLaunchInterceptor} onMouseEnter={onMouseEnter} onMouseLeave={onMouseLeave} />;
       case "drone":
-        return <DroneUnit {...commonProps} />;
+        return <DroneUnit {...commonProps} onMouseEnter={onMouseEnter} onMouseLeave={onMouseLeave} />;
       case "artillery":
-        // Artillery could fire a projectile in onClick
-        return <ArtilleryUnit {...commonProps} onClick={() => console.log("Fire artillery!", unit.id)} />;
+        return <ArtilleryUnit {...commonProps} onClick={() => console.log("Fire artillery!", unit.id)} onMouseEnter={onMouseEnter} onMouseLeave={onMouseLeave} />;
       default:
         return null;
     }
   };
 
-  useEffect(() => {
-    if (!stageRef.current) return;
-    Object.entries(baseZones).forEach(([baseId, basePos]) => {
-      const node = stageRef.current.findOne(`#marker-${baseId}`);
-      if (node && basePos) {
-        node.to({ x: basePos.x, y: basePos.y, duration: 0.3, easing: Konva.Easings.EaseInOut });
-      }
-    });
-  }, [baseZones]);
-
   return (
-    <Stage
-      ref={stageRef}
-      width={width}
-      height={height}
-      style={{ position: "absolute", top: 0, left: 0, zIndex: 500, background: "rgba(0,0,0,0.3)", pointerEvents: "none" }}
-    >
+    <Stage ref={stageRef} width={width} height={height} style={{ position: "absolute", top: 0, left: 0, zIndex: 500 }}>
       <Layer>
         {Object.entries(baseZones).map(([baseId, basePos]) => {
           if (focusMode && selectedBaseId && baseId !== selectedBaseId) return null;
@@ -216,7 +217,7 @@ export default function GridCanvas({
                       <BaseGridBackground radius={subBaseRadius} cellSize={cellSize} />
                       {subUnits.map((unit, idx) => {
                         const [cx, cy] = cellPositions[idx % cellPositions.length];
-                        const subBaseCenter = { x: 0, y: 0 }; // origin of sub-base
+                        const subBaseCenter = { x: 0, y: 0 };
                         return renderUnit({ ...unit, x: cx, y: cy }, ox, oy, basePos, unitCellRadius, subBaseCenter);
                       })}
                     </Group>
@@ -245,6 +246,19 @@ export default function GridCanvas({
         {explosions.map((ex, idx) => (
           <Explosion key={idx} x={ex.x} y={ex.y} onAnimationEnd={() => setExplosions((prev) => prev.filter((_, i) => i !== idx))} />
         ))}
+
+        {/* Tooltip */}
+        {tooltip.visible && (
+          <Text
+            text={tooltip.text}
+            x={tooltip.x + 10}
+            y={tooltip.y + 10}
+            fontSize={14}
+            fill="yellow"
+            padding={4}
+            background="black"
+          />
+        )}
 
         <FloatingMessages messages={floatingMessages} />
       </Layer>

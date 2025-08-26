@@ -88,6 +88,8 @@ export default function FullMap({ step, onLogsUpdate, newJammer }) {
   const [focusMode, setFocusMode] = useState(false);
   const [selectedBaseId, setSelectedBaseId] = useState(null);
   const [newMissile, setNewMissile] = useState(null); // ✅ Local state
+const [newDrone, setNewDrone] = useState(null);
+const [newArtillery, setNewArtillery] = useState(null);
 
   const containerRef = useRef(null);
 
@@ -191,6 +193,8 @@ const handleBaseClick = (base) => {
           setSelectedBaseId={setSelectedBaseId}
           onLogsUpdate={onLogsUpdate}
           newMissile={newMissile} // ✅ Pass updated missile
+          newDrone={newDrone}         // ✅ Drone state
+  newArtillery={newArtillery}
           newJammer={newJammer}
         />
       </MapContainer>

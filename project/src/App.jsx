@@ -7,7 +7,7 @@ import { ThreatDashboard } from './components/ThreatDashboard.jsx';
 import { SimulationLog } from './components/SimulationLog.jsx';
 import { MissileParameterModal } from './components/MissileParameterModal.jsx';
 import { SDRProvider } from './hooks/SDRContext.jsx';
-import { JammerParameterModal } from './components/MapSimulatuion/JammerParameterModal.jsx';
+
 import { useCentralAI } from './hooks/useCentralAI.jsx';
 import FullMap from './components/FullMap.jsx';
 function App() {
