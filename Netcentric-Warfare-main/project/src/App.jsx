@@ -112,6 +112,7 @@ function App() {
           <SDRProvider>
             <FullMap
               step={step}
+              mode={mode} 
               onMissileLaunch={handleMapThreatLaunch}
               onLogsUpdate={handleLogUpdate}
               newMissile={newMissile}

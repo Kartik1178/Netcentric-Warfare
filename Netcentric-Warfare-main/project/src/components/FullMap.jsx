@@ -10,7 +10,7 @@ import TerritoryMap from "./TerritoryMap";
 import * as L from "leaflet";
 import { BASES } from "../constants/baseData";
 import { getStyledBaseIcon } from "../utils/transparentIcon";
-
+import MapClickHandler from "../hooks/MapClickHandler";
 // 🔹 Enemy launch zones
 const LAUNCH_ZONES = [
   { id: "pakistan-north", polygon: [[35.0, 74.5],[34.0, 74.0],[33.5, 73.5],[33.5, 74.5]], color: "rgba(255,0,0,0.3)", label: "Enemy Launch Zone (North Pakistan)" },
@@ -49,38 +49,9 @@ function MapStateUpdater({ setZoom, setCenter }) {
   return null;
 }
 
-// 🔹 Handles map clicks for missile launch
-function MapClickHandler({ step, onMissileLaunch }) {
-  useMapEvents({
-    click(e) {
-      if (step !== "launch") return;
 
-      // ✅ Ensure click is in an allowed enemy zone
-      if (!isInsideLaunchZone(e.latlng)) {
-        alert("❌ Launch outside allowed zones!");
-        return;
-      }
 
-      // ✅ Set fixed target (Delhi for now)
-      const fixedTarget = { id: "base-fixed", coords: [28.6139, 77.209] };
-
-      // ✅ Launch missile with the new lat/lng-based structure
-     onMissileLaunch({
-  id: `missile-${Date.now()}`,
-  baseId: fixedTarget.id,
-  startLat: e.latlng.lat,
-  startLng: e.latlng.lng,
-  targetLat: fixedTarget.coords[0],
-  targetLng: fixedTarget.coords[1],
-  type: "missile", // 🔹 MUST include this
-});
-
-    },
-  });
-  return null;
-}
-
-export default function FullMap({ step, onLogsUpdate, newJammer }) {
+export default function FullMap({ step, onLogsUpdate, newJammer, mode }) {
   const [zoom, setZoom] = useState(5);
   const [center, setCenter] = useState([28.6139, 77.209]);
   const [mapInstance, setMapInstance] = useState(null);
@@ -90,9 +61,25 @@ export default function FullMap({ step, onLogsUpdate, newJammer }) {
   const [newMissile, setNewMissile] = useState(null); // ✅ Local state
 const [newDrone, setNewDrone] = useState(null);
 const [newArtillery, setNewArtillery] = useState(null);
-
+const [selectedSpawnType, setSelectedSpawnType] = useState("missile");
+useEffect(() => {
+  if (mode) {
+    setSelectedSpawnType(mode);
+    console.log(`[FullMap] Mode updated to: ${mode}`);
+  }
+}, [mode]);
   const containerRef = useRef(null);
+  useEffect(() => {
+    if (newDrone) {
+      console.log("[FullMap] Received newDrone:", newDrone);
+    }
+  }, [newDrone]);
 
+  useEffect(() => {
+    if (newArtillery) {
+      console.log("[FullMap] Received newArtillery:", newArtillery);
+    }
+  }, [newArtillery]);
   // ✅ Handle missile launch
   const handleMissileLaunch = (missile) => {
     setNewMissile(missile); // ✅ Trigger TerritoryMap spawn
@@ -168,7 +155,35 @@ const handleBaseClick = (base) => {
 
         <MapStateUpdater setZoom={setZoom} setCenter={setCenter} />
         <MapReadySetter onMapReady={setMapInstance} />
-        <MapClickHandler step={step} onMissileLaunch={handleMissileLaunch} />
+<MapClickHandler
+  step={step}
+  selectedSpawnType={selectedSpawnType} // You can add a state to select "missile", "drone", "artillery", "jammer"
+  onSpawn={(spawnData) => {
+    switch (spawnData.type) {
+      case "missile":
+        setNewMissile(spawnData);
+        break;
+      case "drone":
+        setNewDrone(spawnData);
+        break;
+      case "artillery":
+        setNewArtillery(spawnData);
+        break;
+      case "jammer":
+        newJammer?.(spawnData);
+        break;
+    }
+
+    onLogsUpdate?.({
+      timestamp: new Date().toLocaleTimeString(),
+      source: "FullMap",
+      type: "spawn",
+      message: `${spawnData.type} spawned at [${spawnData.startLat.toFixed(2)}, ${spawnData.startLng.toFixed(2)}]`,
+      payload: spawnData,
+    });
+  }}
+/>
+
 
         {/* 🟢 Base Markers */}
         {mapInstance &&

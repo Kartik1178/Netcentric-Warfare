@@ -1,31 +1,90 @@
-import React, { useEffect, useRef } from "react";
-import { Image as KonvaImage, Group, Text } from "react-konva";
+import React, { useEffect, useRef, useState } from "react";
+import { Group, Circle, Rect, Text, Image, Line } from "react-konva";
 import useImage from "use-image";
 
-// Generic Unit component
-const Unit = ({ x, y, name, type, imageSrc, onClick }) => {
-  const [img] = useImage(imageSrc);
+// ===================== DRONE =====================
+export const DroneUnit = ({ x, y, radius = 20 }) => {
+  const [droneImg] = useImage("/drone.png"); // <-- Place your drone image in public/drone.png
+  const [trail, setTrail] = useState([]);
+  const trailRef = useRef([]);
+
+  // Update movement trail for drone
+  useEffect(() => {
+    trailRef.current = [...trailRef.current, { x, y }];
+    if (trailRef.current.length > 10) trailRef.current.shift();
+    setTrail([...trailRef.current]);
+  }, [x, y]);
+
+  const trailPoints = trail.flatMap((p) => [p.x, p.y]);
+
   return (
-    <Group x={x} y={y} onClick={onClick} offsetX={25} offsetY={25}>
-      <KonvaImage image={img} width={50} height={50} />
-      <Text
-        text={name}
-        fontSize={12}
-        fill="white"
-        y={30}
-        offsetX={25}
-        align="center"
-      />
+    <Group>
+      {/* Flight trail */}
+      {trailPoints.length > 2 && (
+        <Line
+          points={trailPoints}
+          stroke="rgba(0,255,255,0.5)"
+          strokeWidth={2}
+          lineCap="round"
+          lineJoin="round"
+          tension={0.2}
+        />
+      )}
+
+      {/* Drone body */}
+      <Group x={x} y={y}>
+        {/* Fallback shape while image loads */}
+        <Circle
+          radius={radius}
+          fill="cyan"
+          opacity={0.6}
+          shadowBlur={4}
+        />
+        {droneImg && (
+          <Image
+            image={droneImg}
+            x={-radius}
+            y={-radius}
+            width={radius * 2}
+            height={radius * 2}
+            opacity={0.9}
+          />
+        )}
+      </Group>
     </Group>
   );
 };
 
-// Drone Unit
-export const DroneUnit = ({ x, y, name, onClick }) => {
-  return <Unit x={x} y={y} name={name} type="drone" imageSrc="/images/drone.png" onClick={onClick} />;
-};
+// ===================== ARTILLERY =====================
+export const ArtilleryUnit = ({ x, y, radius = 20, onClick }) => {
+  const [artilleryImg] = useImage("/artillery.png"); // <-- Place your artillery image in public/artillery.png
 
-// Artillery Unit
-export const ArtilleryUnit = ({ x, y, name, onClick }) => {
-  return <Unit x={x} y={y} name={name} type="artillery" imageSrc="/images/artillery.png" onClick={onClick} />;
+  return (
+    <Group x={x} y={y} onClick={onClick}>
+      {/* Fallback shape while image loads */}
+      <Rect
+        x={-radius / 2}
+        y={-radius / 2}
+        width={radius}
+        height={radius}
+        fill="orange"
+        stroke="black"
+        strokeWidth={2}
+        cornerRadius={4}
+        opacity={0.6}
+      />
+
+      {/* Artillery image */}
+      {artilleryImg && (
+        <Image
+          image={artilleryImg}
+          x={-radius}
+          y={-radius}
+          width={radius * 2}
+          height={radius * 2}
+          opacity={0.9}
+        />
+      )}
+    </Group>
+  );
 };

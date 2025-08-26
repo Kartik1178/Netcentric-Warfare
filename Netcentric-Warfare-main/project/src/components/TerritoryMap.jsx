@@ -70,7 +70,7 @@ export default function TerritoryMap(props) {
         const subBaseId = `${baseId}-sub${i + 1}`;
         const localUnits = generateBaseUnits(subBaseId, baseData.type, dynamicRadius);
         const mappedUnits = localUnits.map(u => ({ ...u, localX: u.x, localY: u.y }));
-        console.log(`[Base Units] Base:${baseId}, SubBase:${subBaseId}, Units:`, mappedUnits);
+
         return mappedUnits;
       });
 
@@ -119,7 +119,7 @@ export default function TerritoryMap(props) {
           const dist = Math.sqrt(dx*dx + dy*dy);
           if (dist < 0.001) return {...obj, reached:true};
           const newObj = {...obj, lat: obj.lat + obj.vy, lng: obj.lng + obj.vx};
-          console.log(`[Move Object] id:${obj.id} type:${obj.type} lat:${newObj.lat.toFixed(5)} lng:${newObj.lng.toFixed(5)} dist:${dist.toFixed(5)}`);
+
           return newObj;
         }
         return obj;
@@ -161,7 +161,7 @@ export default function TerritoryMap(props) {
     .map(obj => {
       if (!mapInstance) return null;
       const point = mapInstance.latLngToContainerPoint([obj.lat,obj.lng]);
-      console.log(`[Project Object] id:${obj.id} type:${obj.type} lat:${obj.lat.toFixed(5)} lng:${obj.lng.toFixed(5)} x:${point?.x.toFixed(2)} y:${point?.y.toFixed(2)}`);
+
       return {...obj, x:point?.x||0, y:point?.y||0};
     }).filter(Boolean);
 
@@ -170,7 +170,7 @@ export default function TerritoryMap(props) {
     .map(obj => {
       if (!mapInstance || obj.lat==null || obj.lng==null) return null;
       const point = mapInstance.latLngToContainerPoint([obj.lat,obj.lng]);
-      console.log(`[Project Interceptor] id:${obj.id} lat:${obj.lat.toFixed(5)} lng:${obj.lng.toFixed(5)} x:${point?.x.toFixed(2)} y:${point?.y.toFixed(2)}`);
+
       return {...obj, x:point?.x||0, y:point?.y||0};
     }).filter(Boolean);
 
@@ -220,7 +220,7 @@ export default function TerritoryMap(props) {
               if(!norm) return;
               const { vx, vy } = calculateVelocity(norm.launcherLat, norm.launcherLng, norm.targetLat, norm.targetLng, 0.08);
               const interceptorId = `interceptor-${Date.now()}`;
-              console.log(`[Launch Interceptor] id:${interceptorId} from (${norm.launcherLat},${norm.launcherLng}) to target:${norm.threatId}`);
+
               setActiveInterceptors(prev => [...prev, {
                 id: interceptorId,
                 threatId: norm.threatId,
