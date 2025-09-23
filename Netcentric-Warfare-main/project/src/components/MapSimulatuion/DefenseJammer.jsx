@@ -94,7 +94,7 @@ export default function DefenseJammer({
       {isOnCooldown && (
         <Circle
           radius={jamRadius}
-          stroke="gray"
+          stroke="green"
           dash={[8, 4]}
           strokeWidth={1}
           opacity={0.3}

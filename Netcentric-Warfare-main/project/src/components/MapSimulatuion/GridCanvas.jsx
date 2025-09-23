@@ -2,15 +2,16 @@ import React, { useEffect, useRef, useState } from "react";
 import { Stage, Layer, Group, Rect, Text, Line } from "react-konva";
 import Radar from "./RadarUnit";
 import Antenna from "./AntennaUnit";
-import DefenseJammer from "./DefenseJammer";
+import Jammer from "./JammerUnit";   // <-- free-floating jammer
 import Launcher from "./LauncherUnit";
 import Missile from "./Missile";
 import { Interceptor } from "./Interceptor";
 import Explosion from "../Explosion";
 import CentralAIUnit from "./CentralAIUnit";
+import DefenseJammer from "./DefenseJammer"; // <-- base defense jammer
 import { CENTRAL_AI_POSITION } from "../../constants/AIconstant";
 import FloatingMessages from "./FloatingMessages";
-import { DroneUnit,ArtilleryUnit } from "./Unit";
+import { DroneUnit, ArtilleryUnit } from "./Unit";
 
 // Orbit hook for drones
 const useOrbit = (centerX, centerY, radius, speed = 0.02) => {
@@ -83,9 +84,11 @@ export default function GridCanvas(props) {
 
   const missiles = objects.filter(o => o.type === "missile");
   const interceptors = objects.filter(o => o.type === "interceptor");
-  const baseUnits = objects.filter(o => o.type !== "missile" && o.type !== "interceptor");
-const drones = objects.filter(o => o.type === "drone");
-const artilleryUnits = objects.filter(o => o.type === "artillery");
+  const baseUnits = objects.filter(o => o.type !== "missile" && o.type !== "interceptor" && o.type !== "jammer");
+  const drones = objects.filter(o => o.type === "drone");
+  const jammers = objects.filter(o => o.type === "jammer");  // free-floating jammers
+  const artilleryUnits = objects.filter(o => o.type === "artillery");
+
   // Render a unit with hover tooltip
   const renderUnit = (unit, offsetX, offsetY, basePos, unitRadius, subBaseCenter) => {
     const commonProps = {
@@ -115,9 +118,18 @@ const artilleryUnits = objects.filter(o => o.type === "artillery");
     switch(unit.type) {
       case "radar": return <Radar {...commonProps} absoluteX={basePos.x + offsetX + unit.x} absoluteY={basePos.y + offsetY + unit.y} onMouseEnter={onMouseEnter} onMouseLeave={onMouseLeave} />;
       case "antenna": return <Antenna {...commonProps} zoom={zoom} radius={unitRadius} onMouseEnter={onMouseEnter} onMouseLeave={onMouseLeave} />;
-      case "jammer": return <DefenseJammer {...commonProps} onMouseEnter={onMouseEnter} onMouseLeave={onMouseLeave} />;
+      case "jammer":  // <-- base DefenseJammer
+        return <DefenseJammer
+          {...commonProps}
+          x={unit.x}
+          y={unit.y}
+          radius={unitRadius}
+          jamRadius={unit.effectRadius || 150}
+          currentFrequency={unit.frequency || "2GHz"}
+          onMouseEnter={onMouseEnter}
+          onMouseLeave={onMouseLeave}
+        />;
       case "launcher": return <Launcher {...commonProps} onLaunchInterceptor={onLaunchInterceptor} onMouseEnter={onMouseEnter} onMouseLeave={onMouseLeave} />;
-
       default: return null;
     }
   };
@@ -170,34 +182,58 @@ const artilleryUnits = objects.filter(o => o.type === "artillery");
         {/* Missiles & interceptors */}
         {missiles.map(m => <Missile key={m.id} x={m.x} y={m.y} radius={scaleByZoom(zoom,20,8,30)} />)}
         {interceptors.map(i => <Interceptor key={i.id} x={i.x} y={i.y} radius={scaleByZoom(zoom,10,6,20)} />)}
-{drones.map(d => (
-  <Group key={d.id}>
-    <DroneUnit
-      x={d.x}
-      y={d.y}
-      radius={scaleByZoom(zoom, 15, 8, 25)}
-    />
-    {/* Debug label */}
-    <Text
-      x={d.x + 10}
-      y={d.y - 10}
-      text={`DRONE\n${d.id.split("-")[1]}`}  // Shortened ID for readability
-      fontSize={12}
-      fill="yellow"
-      align="center"
-    />
-  </Group>
-))}
 
-{artilleryUnits.map(a => (
-  <ArtilleryUnit
-    key={a.id}
-    x={a.x}
-    y={a.y}
-    radius={scaleByZoom(zoom, 18, 10, 28)}
-    onClick={() => console.log("Fire artillery!", a.id)}
-  />
-))} 
+        {/* Free-floating Jammers */}
+        {jammers.map(j => (
+        
+          <Group key={j.id}>
+            <Jammer
+              x={j.x}
+              y={j.y}
+              radius={scaleByZoom(zoom, 18, 10, 28)}
+            />
+            {/* Debug label */}
+            <Text
+              x={j.x + 10}
+              y={j.y - 10}
+              text={`JAMMER\n${j.id.split("-")[1]}`}
+              fontSize={12}
+              fill="cyan"
+              align="center"
+            />
+          </Group>
+        ))}
+
+        {/* Drones */}
+        {drones.map(d => (
+          <Group key={d.id}>
+            <DroneUnit
+              x={d.x}
+              y={d.y}
+              radius={scaleByZoom(zoom, 15, 8, 25)}
+            />
+            <Text
+              x={d.x + 10}
+              y={d.y - 10}
+              text={`DRONE\n${d.id.split("-")[1]}`}
+              fontSize={12}
+              fill="yellow"
+              align="center"
+            />
+          </Group>
+        ))}
+
+        {/* Artillery */}
+        {artilleryUnits.map(a => (
+          <ArtilleryUnit
+            key={a.id}
+            x={a.x}
+            y={a.y}
+            radius={scaleByZoom(zoom, 18, 10, 28)}
+            onClick={() => console.log("Fire artillery!", a.id)}
+          />
+        ))}
+
         {/* Explosions */}
         {explosions.map((ex, idx) => (
           <Explosion key={idx} x={ex.x} y={ex.y} onAnimationEnd={()=>setExplosions(prev => prev.filter((_,i)=>i!==idx))} />

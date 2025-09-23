@@ -2,16 +2,17 @@ import { useState } from "react";
 import { DroneParameterModal } from "./components/DroneParameterModal";
 import { ArtilleryParameterModal } from "./components/ArtilleryParameterModal";
 import { MissileParameterModal } from "./components/MissileParameterModal";
+import { JammerParameterModal } from "./components/MapSimulatuion/JammerParameterModal";
 import { ThreatDashboard } from "./components/ThreatDashboard";
 import { SimulationLog } from "./components/SimulationLog";
 import FullMap from "./components/FullMap";
 import { SDRProvider } from "./hooks/SDRContext";
 import { latLngToStageCoords } from "./utils/leafletToKonva";
 
-
 function App() {
   const [selectedThreat, setSelectedThreat] = useState(null);
   const [selectedJammer, setSelectedJammer] = useState(null);
+
   const [logs, setLogs] = useState([]);
 
   const [newMissile, setNewMissile] = useState(null);
@@ -23,14 +24,16 @@ function App() {
   const [mode, setMode] = useState(null);
   const [altitude, setAltitude] = useState(15);
 
+  // ✅ Append logs
   const handleLogUpdate = (newLog) => {
     setLogs((prevLogs) => [...prevLogs.slice(-49), newLog]);
   };
 
-  // Handles launches from the map
+  // ✅ Main map launch handler
   const handleMapThreatLaunch = ({ latlng, nearestBase }) => {
     if (!window.__leafletMapInstance) return;
     const map = window.__leafletMapInstance;
+
     const startPixel = latLngToStageCoords(map, latlng);
     const targetPixel = latLngToStageCoords(map, {
       lat: nearestBase.coords[0],
@@ -43,7 +46,10 @@ function App() {
 
     const threat = {
       id: `${threatType}-${Date.now()}`,
-      name: selectedThreat?.name || threatType.charAt(0).toUpperCase() + threatType.slice(1),
+      name:
+        selectedThreat?.name ||
+        selectedJammer?.name ||
+        threatType.charAt(0).toUpperCase() + threatType.slice(1),
       baseId: nearestBase.id,
       type: threatType,
       altitude,
@@ -53,7 +59,7 @@ function App() {
       timestamp: Date.now(),
     };
 
-    // Assign to appropriate state
+    // ✅ Assign to proper state
     if (threatType === "missile") setNewMissile(threat);
     else if (threatType === "drone") setNewDrone(threat);
     else if (threatType === "artillery") setNewArtillery(threat);
@@ -70,22 +76,29 @@ function App() {
     });
 
     setSelectedThreat(null);
+    setSelectedJammer(null);
     setStep("idle");
   };
 
+  // ✅ Handle selection from ThreatDashboard
   const handleThreatSelect = (item, type = "threat") => {
     if (type === "jammer") {
       setMode("jammer");
       setSelectedJammer(item);
+      setStep("launch"); // Jammer doesn’t need altitude
       return;
     }
 
-    const itemType = item.type.toLowerCase();
+    const itemType = (item.type || "").toLowerCase();
     if (itemType.includes("drone")) {
       setMode("drone");
       setSelectedThreat(item);
       setStep("altitude");
-    } else if (itemType.includes("artillery") || itemType.includes("cannon") || itemType.includes("howitzer")) {
+    } else if (
+      itemType.includes("artillery") ||
+      itemType.includes("cannon") ||
+      itemType.includes("howitzer")
+    ) {
       setMode("artillery");
       setSelectedThreat(item);
       setStep("altitude");
@@ -100,19 +113,22 @@ function App() {
 
   return (
     <div className="h-screen bg-military-dark flex flex-col overflow-hidden">
+      {/* 🟢 Current Step Banner */}
       <div className="absolute top-2 left-1/2 -translate-x-1/2 z-50">
         <div className="bg-black/70 text-white px-4 py-2 rounded-md shadow-md font-bold">
           Current Step: {step.toUpperCase()}
         </div>
       </div>
 
+      {/* 🟢 Layout */}
       <div className="flex-1 flex overflow-hidden">
         <ThreatDashboard onThreatSelect={handleThreatSelect} />
+
         <div className="flex-1 relative m-2 overflow-hidden">
           <SDRProvider>
             <FullMap
               step={step}
-              mode={mode} 
+              mode={mode}
               onMissileLaunch={handleMapThreatLaunch}
               onLogsUpdate={handleLogUpdate}
               newMissile={newMissile}
@@ -122,10 +138,11 @@ function App() {
             />
           </SDRProvider>
         </div>
+
         <SimulationLog logs={logs} onClearLogs={clearLogs} />
       </div>
 
-      {/* Missile Modal */}
+      {/* 🟢 Missile Modal */}
       {selectedThreat && step === "altitude" && mode === "missile" && (
         <MissileParameterModal
           threat={selectedThreat}
@@ -140,7 +157,7 @@ function App() {
         />
       )}
 
-      {/* Drone Modal */}
+      {/* 🟢 Drone Modal */}
       {selectedThreat && step === "altitude" && mode === "drone" && (
         <DroneParameterModal
           drone={selectedThreat}
@@ -155,7 +172,7 @@ function App() {
         />
       )}
 
-      {/* Artillery Modal */}
+      {/* 🟢 Artillery Modal */}
       {selectedThreat && step === "altitude" && mode === "artillery" && (
         <ArtilleryParameterModal
           artillery={selectedThreat}
@@ -170,11 +187,20 @@ function App() {
         />
       )}
 
-      {/* Jammer Modal */}
+      {/* 🟢 Jammer Modal */}
       {selectedJammer && (
         <JammerParameterModal
           jammer={selectedJammer}
-          onActivate={(jammerData) => setNewJammer(jammerData)}
+          onActivate={(jammerData) => {
+            setNewJammer(jammerData);
+            handleLogUpdate({
+              timestamp: new Date().toLocaleTimeString(),
+              source: "App",
+              type: "jammer-activation",
+              message: `Jammer '${jammerData.name}' activated.`,
+              payload: jammerData,
+            });
+          }}
           onClose={() => setSelectedJammer(null)}
         />
       )}

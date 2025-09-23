@@ -4,27 +4,38 @@ import { X, Zap, Radio, Info } from "lucide-react";
 export const JammerParameterModal = ({ jammer, onClose, onActivate }) => {
   if ( !jammer) return null;
   const handleActivate = () => {
-    if (jammer) {
-      const safeRange = Number(jammer.range) || 0;
-      const safePower = Number(jammer.power) || 0;
+  if (!jammer) return;
 
-      const jammerData = {
-        name: jammer.name,
-        frequency: jammer.frequency,
-        range: safeRange,
-        power: safePower,
-        position: { x: 100, y: 100 },
-      };
+  const safeRange = Number(jammer.range) || 0;
+  const safePower = Number(jammer.power) || 0;
 
-      console.log("📡 Jammer activating with data:", jammerData);
-
-      if (onActivate) {
-        onActivate(jammerData);
-      }
-
-      onClose();
-    }
+  const jammerThreat = {
+    id: `jammer-${Date.now()}`, // unique id
+    type: "jammer",             // mark as jammer
+    name: jammer.name,
+    baseId: null,               // optional
+    startPosition: { x: 100, y: 100 }, // position on the map
+    targetPosition: null,       // jammers don’t move
+    altitude: 0,
+    specifications: {
+      range: safeRange,
+      power: safePower,
+      frequency: jammer.frequency || "N/A",
+      platform: jammer.platform || "N/A",
+    },
+    status: jammer.status || "Unknown",
+    notes: jammer.notes || "",
+    year: jammer.year || "N/A",
+    origin: jammer.country || "N/A",
   };
+
+  console.log("📡 Jammer activating with data:", jammerThreat);
+
+  if (onActivate) onActivate(jammerThreat);
+
+  onClose();
+};
+
   return (
     <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-50 p-4">
       <div className="bg-slate-900/95 backdrop-blur-sm border border-slate-700/50 rounded-2xl max-w-2xl w-full max-h-[90vh] overflow-y-auto shadow-2xl">

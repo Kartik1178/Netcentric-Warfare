@@ -51,7 +51,7 @@ function MapStateUpdater({ setZoom, setCenter }) {
 
 
 
-export default function FullMap({ step, onLogsUpdate, newJammer, mode }) {
+export default function FullMap({ step, onLogsUpdate, mode }) {
   const [zoom, setZoom] = useState(5);
   const [center, setCenter] = useState([28.6139, 77.209]);
   const [mapInstance, setMapInstance] = useState(null);
@@ -61,6 +61,8 @@ export default function FullMap({ step, onLogsUpdate, newJammer, mode }) {
   const [newMissile, setNewMissile] = useState(null); // ✅ Local state
 const [newDrone, setNewDrone] = useState(null);
 const [newArtillery, setNewArtillery] = useState(null);
+const [newJammer, setNewJammer] = useState(null);
+
 const [selectedSpawnType, setSelectedSpawnType] = useState("missile");
 useEffect(() => {
   if (mode) {
@@ -161,17 +163,27 @@ const handleBaseClick = (base) => {
   onSpawn={(spawnData) => {
     switch (spawnData.type) {
       case "missile":
+         console.log("[FullMap] 🚀 Spawning missile:", spawnData);
         setNewMissile(spawnData);
         break;
       case "drone":
         setNewDrone(spawnData);
         break;
       case "artillery":
+          console.log("[FullMap] 💣 Spawning artillery:", spawnData);
         setNewArtillery(spawnData);
         break;
       case "jammer":
-        newJammer?.(spawnData);
-        break;
+    setNewJammer({
+        ...spawnData,
+        lat: spawnData.startLat,
+        lng: spawnData.startLng,
+    });
+    break;
+
+     console.log("[FullMap] 📡 New jammer:", spawnData);
+  break;
+
     }
 
     onLogsUpdate?.({
@@ -210,6 +222,7 @@ const handleBaseClick = (base) => {
           newMissile={newMissile} // ✅ Pass updated missile
           newDrone={newDrone}         // ✅ Drone state
   newArtillery={newArtillery}
+  
           newJammer={newJammer}
         />
       </MapContainer>

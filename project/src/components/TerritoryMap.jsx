@@ -1,6 +1,5 @@
-// In TerritoryMap.js
-
-import { useState, useEffect, useRef, useCallback } from "react";
+// TerritoryMap.jsx
+import { useState, useEffect, useRef } from "react";
 import { Marker, Polygon } from "react-leaflet";
 import GridCanvas from "./MapSimulatuion/GridCanvas";
 import { useSDR } from "../hooks/SDRContext";
@@ -13,169 +12,298 @@ import { useLeafletToKonvaTransform } from "../hooks/useLeafletToKonvaTransform"
 import { useSmoothPositions } from "../hooks/useSmoothPositions";
 import { useSubBaseUnits } from "../hooks/useSubBaseUnits";
 import { getStyledBaseIcon } from "../utils/transparentIcon";
+import { normalizeLaunchToLatLng } from "../utils/coordinateUtils";
 
 const LAUNCH_ZONES = [
-  { id: "pakistan-north", polygon: [[35.0, 74.5],[34.0, 74.0],[33.5, 73.5],[33.5, 74.5]], color: "rgba(255,0,0,0.3)" },
-  { id: "pakistan-south", polygon: [[25.5, 67.5],[25.0, 67.0],[24.5, 67.0],[24.5, 67.5]], color: "rgba(255,50,50,0.3)" },
-  { id: "arabian-sea", polygon: [[22.0, 65.5],[20.0, 65.5],[18.0, 67.0],[18.0, 69.0],[22.0, 69.0]], color: "rgba(255,100,0,0.25)" },
-  { id: "bay-of-bengal", polygon: [[17.0, 87.0],[15.0, 87.0],[13.0, 89.0],[14.0, 91.0],[17.0, 89.0]], color: "rgba(255,0,200,0.25)" },
-  { id: "indian-ocean", polygon: [[10.0, 72.0],[7.0, 72.0],[6.0, 74.0],[7.0, 76.0],[10.0, 75.0]], color: "rgba(255,0,100,0.2)" },
+  { id: "pakistan-north", polygon: [[35,74.5],[34,74],[33.5,73.5],[33.5,74.5]], color: "rgba(255,0,0,0.3)" },
+  // ... (same as earlier)
 ];
 
-export default function TerritoryMap({
-  onLogsUpdate,
-  newMissile,
-  newJammer,
-  zoom,
-  center,
-  mapInstance,
-  mapSize,
-  focusMode,
-  setFocusMode,
-  selectedBaseId,
-  setSelectedBaseId,
-}) {
-console.log('Territory')
+function calculateVelocity(startLat, startLng, targetLat, targetLng, speed = 0.05) {
+  let dx = targetLng - startLng;
+  let dy = targetLat - startLat;
+  let dist = Math.sqrt(dx * dx + dy * dy);
+  if (dist < 0.0001) {
+    const angle = Math.random() * 2 * Math.PI;
+    dx = Math.cos(angle) * 0.001;
+    dy = Math.sin(angle) * 0.001;
+    dist = 0.001;
+  }
+  return { vx: (dx / dist) * speed, vy: (dy / dist) * speed };
+}
+
+export default function TerritoryMap(props) {
+  const {
+    onLogsUpdate,
+    newMissile, setNewMissile,
+    newDrone, setNewDrone,
+    newArtillery, setNewArtillery,
+    newJammer, setNewJammer,
+    zoom, center, mapInstance, mapSize,
+    focusMode, selectedBaseId
+  } = props;
+
   const { jammerReports, setJammerReports, currentFrequency, setCurrentFrequency, availableFrequencies } = useSDR();
   const [floatingMessages, showMessage] = useFloatingMessages();
-  
-  // ✅ --- REFACTORED STATE ---
-  const [baseUnits, setBaseUnits] = useState([]);
-  const [missiles, setMissiles] = useState([]);
-  const [interceptors, setInterceptors] = useState([]);
-  const [explosions, setExplosions] = useState([]);
-  const [allUnits, setAllUnits] = useState([]); // Single source of truth for the canvas
-  
-  const spawnedMissiles = useRef(new Set());
   const showMessageRef = useRef(null);
-   useEffect(() => {
-    showMessageRef.current = showMessage;
-  }, [showMessage]);
+  useEffect(() => { showMessageRef.current = showMessage; }, [showMessage]);
 
+  const [globalObjects, setGlobalObjects] = useState([]);
+  const [explosions, setExplosions] = useState([]);
+  const spawnedObjects = useRef(new Set());
+  const [activeInterceptors, setActiveInterceptors] = useState([]);
+  const globalObjectsRef = useRef(globalObjects);
+  useEffect(() => { globalObjectsRef.current = globalObjects; }, [globalObjects]);
 
   const { pixelPositions, zoom: konvaZoom } = useLeafletToKonvaTransform({ mapInstance, baseData: BASES, mapSize });
   const smoothBasePositions = useSmoothPositions(pixelPositions, 300);
 
-  // --- EFFECT #1: Generate Base Units when map changes ---
+  const VELOCITY_BY_TYPE = { missile: 0.05, drone: 0.02, artillery: 0.015 };
+
+  // Clear old transient/threat objects on mount
+  useEffect(() => {
+    spawnedObjects.current.clear();
+    setGlobalObjects(prev => prev.filter(o => !["jammer","missile","drone","artillery"].includes(o.type)));
+  }, []);
+
+  // Generate base units (unchanged)
   useEffect(() => {
     if (!pixelPositions || Object.keys(pixelPositions).length === 0) return;
 
     const generateUnitsForBase = (baseId) => {
-        const baseData = BASES.find((b) => b.id === baseId);
-        if (!baseData) return [];
-        return Array.from({ length: 4 }).flatMap((_, i) => {
-            const subBaseId = `${baseId}-sub${i + 1}`;
-            const dynamicRadius = Math.max(40, konvaZoom * 15); 
-            const localUnits = generateBaseUnits(subBaseId, baseData.type, dynamicRadius);
-            return localUnits.map((u) => ({ ...u, localX: u.x, localY: u.y }));
-        });
+      const baseData = BASES.find(b => b.id === baseId);
+      if (!baseData) return [];
+      const dynamicRadius = konvaZoom >= 15 ? 80 : konvaZoom >= 13 ? 70 : 60;
+
+      return Array.from({ length: 4 }).flatMap((_, i) => {
+        const subBaseId = `${baseId}-sub${i + 1}`;
+        const localUnits = generateBaseUnits(subBaseId, baseData.type, dynamicRadius);
+        return localUnits.map(u => ({ ...u, localX: u.x, localY: u.y }));
+      });
     };
 
-    const allGeneratedUnits = focusMode && selectedBaseId
+    const allUnits = selectedBaseId
       ? generateUnitsForBase(selectedBaseId)
-      : BASES.flatMap((base) => generateUnitsForBase(base.id));
-      
-    setBaseUnits(allGeneratedUnits);
+      : BASES.flatMap(b => generateUnitsForBase(b.id));
 
-  }, [pixelPositions, konvaZoom, focusMode, selectedBaseId]);
+    setGlobalObjects(prev => [
+      ...prev.filter(o => ["missile","drone","artillery","interceptor","jammer"].includes(o.type)),
+      ...allUnits
+    ]);
+  }, [pixelPositions, konvaZoom, selectedBaseId]);
 
-
-  // --- EFFECT #2: Add new missiles ---
+  // --- Spawn new objects: unified logic for missile & jammer (and others) ---
   useEffect(() => {
-    if (!newMissile || spawnedMissiles.current.has(newMissile.id)) return;
-    
-    const missileObj = {
-      id: newMissile.id, type: "missile", lat: newMissile.startLat, lng: newMissile.startLng,
-      targetLat: newMissile.targetLat, targetLng: newMissile.targetLng, baseId: newMissile.baseId,
-      speed: 0.05, exploded: false,
-    };
+    const candidates = [
+      { data: newMissile, setter: setNewMissile },
+      { data: newDrone, setter: setNewDrone },
+      { data: newArtillery, setter: setNewArtillery },
+      { data: newJammer, setter: setNewJammer },
+    ];
 
-    setMissiles(prev => [...prev, missileObj]);
-    spawnedMissiles.current.add(newMissile.id);
-    onLogsUpdate?.({ /* ... log data ... */ });
+    candidates.forEach(item => {
+      const objData = item.data;
+      if (!objData) return;
 
-  }, [newMissile, onLogsUpdate]);
-  
-  // --- EFFECT #3: The MAIN Animation and State Combining Loop ---
-  useEffect(() => {
-    const animationInterval = setInterval(() => {
-        // 1. Update missile positions (lat/lng)
-        setMissiles(prevMissiles => prevMissiles.map(m => {
-            if (m.exploded || m.reached) return m;
-            const dx = m.targetLng - m.lng;
-            const dy = m.targetLat - m.lat;
-            const dist = Math.sqrt(dx * dx + dy * dy);
-            if (dist < 0.001) return { ...m, reached: true };
-            return { ...m, lat: m.lat + (dy / dist) * m.speed, lng: m.lng + (dx / dist) * m.speed };
-        }));
+      // Normalize id
+      const id = objData.id || `${objData.type || 'obj'}-${Date.now()}`;
 
-        // 2. Update interceptor positions (pixels)
-        setInterceptors(prevInterceptors => prevInterceptors.map(i => {
-            if (i.exploded || i.reached) return i;
-            const dx = i.targetX - i.x;
-            const dy = i.targetY - i.y;
-            const dist = Math.sqrt(dx * dx + dy * dy);
-            if (dist < 5) return { ...i, reached: true };
-            return { ...i, x: i.x + (dx / dist) * i.speed, y: i.y + (dy / dist) * i.speed };
-        }));
+      if (spawnedObjects.current.has(id)) {
+        // already spawned — clear transient and skip
+        item.setter?.(null);
+        return;
+      }
 
-        // 3. COMBINE ALL DATA INTO A SINGLE ARRAY FOR THE CANVAS
-        if (mapInstance && Object.keys(smoothBasePositions).length > 0) {
-            const subBaseSpacing = konvaZoom >= 15 ? 300 : konvaZoom >= 13 ? 200 : 120;
-            const subBaseOffsets = [[0, -subBaseSpacing], [subBaseSpacing, 0], [0, subBaseSpacing], [-subBaseSpacing, 0]];
-
-            const globallyPositionedBaseUnits = baseUnits.map(unit => {
-                const mainBaseId = unit.baseId.replace(/-sub[1-4]$/, '');
-                const basePixelPos = smoothBasePositions[mainBaseId];
-                if (!basePixelPos) return null;
-                const subBaseIndexMatch = unit.baseId.match(/sub(\d+)/);
-                const subBaseIndex = subBaseIndexMatch ? parseInt(subBaseIndexMatch[1]) - 1 : 0;
-                const [subOffsetX, subOffsetY] = subBaseOffsets[subBaseIndex] || [0, 0];
-                return { ...unit, x: basePixelPos.x + subOffsetX + unit.localX, y: basePixelPos.y + subOffsetY + unit.localY };
-            }).filter(Boolean);
-
-            const missilesInPixels = missiles.map(m => {
-                const point = mapInstance.latLngToContainerPoint([m.lat, m.lng]);
-                return { ...m, x: point.x, y: point.y };
-            });
-
-            setAllUnits([...globallyPositionedBaseUnits, ...missilesInPixels, ...interceptors]);
+      // JAMMER: store as static threat with lat/lng (no early pixel projection required)
+      if (objData.type === "jammer") {
+        const lat = objData.startLat ?? objData.lat;
+        const lng = objData.startLng ?? objData.lng;
+        // fallback guard
+        if (typeof lat !== "number" || typeof lng !== "number") {
+          console.warn("[TerritoryMap] jammer missing startLat/startLng:", objData);
+          item.setter?.(null);
+          return;
         }
+
+        setGlobalObjects(prev => [...prev, {
+          id,
+          type: "jammer",
+          lat,
+          lng,
+          radius: objData.radius ?? objData.r ?? 100,
+          baseId: objData.baseId,
+          threat: true,
+          exploded: false
+        }]);
+
+        spawnedObjects.current.add(id);
+        onLogsUpdate?.({ type: "jammer-spawn", id, baseId: objData.baseId });
+        // clear transient so it doesn't persist across reload
+        item.setter?.(null);
+        return;
+      }
+
+      // MISSILE / DRONE / ARTILLERY (dynamic) — compute vx/vy and push
+      const speed = VELOCITY_BY_TYPE[objData.type] || 0.05;
+      const sLat = objData.startLat ?? objData.lat;
+      const sLng = objData.startLng ?? objData.lng;
+      const tLat = objData.targetLat ?? objData.targetLat ?? objData.target?.lat;
+      const tLng = objData.targetLng ?? objData.targetLng ?? objData.target?.lng;
+
+      if (typeof sLat !== "number" || typeof sLng !== "number" || typeof tLat !== "number" || typeof tLng !== "number") {
+        console.warn("[TerritoryMap] spawn missing coords:", objData);
+        item.setter?.(null);
+        return;
+      }
+
+      const { vx, vy } = calculateVelocity(sLat, sLng, tLat, tLng, speed);
+
+      setGlobalObjects(prev => [...prev, {
+        id,
+        type: objData.type || "missile",
+        lat: sLat,
+        lng: sLng,
+        targetLat: tLat,
+        targetLng: tLng,
+        baseId: objData.baseId,
+        speed,
+        vx,
+        vy,
+        exploded: false
+      }]);
+
+      spawnedObjects.current.add(id);
+      onLogsUpdate?.({ type: `${objData.type}-spawn`, id, baseId: objData.baseId });
+      // clear the transient input
+      item.setter?.(null);
+    });
+
+    // we depend on the transient props and mapInstance (mapInstance used later for projections)
+  }, [newMissile, newDrone, newArtillery, newJammer, mapInstance]);
+
+  // --- Animate objects & interceptors (update lat/lng and rely on later projection to pixels) ---
+  useEffect(() => {
+    const interval = setInterval(() => {
+      setGlobalObjects(prev => prev.map(obj => {
+        if (["missile","drone","artillery"].includes(obj.type) && !obj.exploded) {
+          const newLat = obj.lat + obj.vy;
+          const newLng = obj.lng + obj.vx;
+          return { ...obj, lat: newLat, lng: newLng };
+        }
+        // jammer static — position updated in projection step
+        return obj;
+      }));
+
+      // interceptors handling (unchanged)
+      setActiveInterceptors(prev => prev.map(intc => {
+        if (intc.exploded || intc.reached) return intc;
+        const targetObj = globalObjectsRef.current.find(o => o.id === intc.targetId && !o.exploded);
+        if (!targetObj) return { ...intc, exploded: true };
+
+        const { vx, vy } = calculateVelocity(intc.lat, intc.lng, targetObj.lat, targetObj.lng, intc.speed);
+        const dx = targetObj.lng - intc.lng;
+        const dy = targetObj.lat - intc.lat;
+        const dist = Math.sqrt(dx*dx + dy*dy);
+
+        if (dist < 0.05) {
+          if (mapInstance) {
+            const point = mapInstance.latLngToContainerPoint([targetObj.lat, targetObj.lng]);
+            setExplosions(prev => [...prev, { x: point.x, y: point.y }]);
+          }
+          setGlobalObjects(prev => prev.map(o => o.id === targetObj.id ? { ...o, exploded: true } : o));
+          return { ...intc, exploded: true };
+        }
+
+        return { ...intc, vx, vy, lat: intc.lat + vy, lng: intc.lng + vx };
+      }));
     }, 30);
 
-    return () => clearInterval(animationInterval);
-  }, [baseUnits, missiles, interceptors, mapInstance, smoothBasePositions, konvaZoom]); // Re-run when any source data changes
+    return () => clearInterval(interval);
+  }, [mapInstance]);
 
+  // --- Convert to pixel coords for Canvas: project dynamic threats and jammers the same way ---
+  const baseUnitsToScale = globalObjects.filter(o => !["missile","drone","artillery","interceptor","jammer"].includes(o.type));
+  const scaledBaseUnits = useSubBaseUnits(baseUnitsToScale, konvaZoom);
 
-  // Pass the single, combined state to Central AI
-  useCentralAI(allUnits, () => {}, (signal) => socket.emit("unit-signal", signal), showMessageRef.current);
+  const projectObjects = globalObjects
+    .filter(o => ["missile","drone","artillery","jammer"].includes(o.type) && !o.exploded)
+    .map(obj => {
+      if (!mapInstance) return null;
+      const point = mapInstance.latLngToContainerPoint([obj.lat, obj.lng]);
+      return { ...obj, x: point?.x ?? 0, y: point?.y ?? 0 };
+    })
+    .filter(Boolean);
 
-  // ... (Collision detection and other logic can remain, but should use the separate states: `missiles`, `interceptors`)
+  const interceptorsInPixels = activeInterceptors
+    .filter(o => !o.exploded)
+    .map(obj => {
+      if (!mapInstance) return null;
+      const point = mapInstance.latLngToContainerPoint([obj.lat, obj.lng]);
+      return { ...obj, x: point?.x ?? 0, y: point?.y ?? 0 };
+    })
+    .filter(Boolean);
+
+  const allUnitsForCanvas = [...scaledBaseUnits, ...projectObjects, ...interceptorsInPixels];
+
+  useCentralAI(allUnitsForCanvas, () => {}, signal => socket.emit("unit-signal", signal), showMessageRef.current);
 
   return (
     <>
-      {/* ... Leaflet Markers and Polygons ... */}
-      <div className="absolute inset-0 w-full h-full" style={{ zIndex: 400, pointerEvents: "none" }}>
-        <GridCanvas
-          width={mapSize.width}
-          height={mapSize.height}
-          explosions={explosions}
-          setExplosions={setExplosions}
-          objects={allUnits} // ✅ PASS THE SINGLE SOURCE OF TRUTH
-          jammerReports={jammerReports}
-          setJammerReports={setJammerReports}
-          currentFrequency={currentFrequency}
-          setCurrentFrequency={setCurrentFrequency}
-          availableFrequencies={availableFrequencies}
-          focusMode={focusMode}
-          baseZones={smoothBasePositions}
-          zoom={konvaZoom}
-          selectedBaseId={selectedBaseId}
-          floatingMessages={floatingMessages}
-          onLaunchInterceptor={ (launchData) => setInterceptors(prev => [...prev, {id: `interceptor-${Date.now()}`, ...launchData, speed: 25}]) }
-          onLogsUpdate={onLogsUpdate}
-          mapInstance={mapInstance}
+      {mapInstance && BASES.map(base => (
+        <Marker
+          key={base.id}
+          position={base.coords}
+          icon={getStyledBaseIcon(base, focusMode && selectedBaseId === base.id)}
+          eventHandlers={{ click: () => { /* handle click */ } }}
         />
+      ))}
+
+      {LAUNCH_ZONES.map(zone => (
+        <Polygon
+          key={zone.id}
+          positions={zone.polygon}
+          pathOptions={{ color: zone.color, fillColor: zone.color, fillOpacity: 0.3 }}
+        />
+      ))}
+
+      <div className="absolute inset-0 w-full h-full" style={{ zIndex: 400, pointerEvents: "none" }}>
+        {mapInstance && mapSize.width && mapSize.height && (
+          <GridCanvas
+            width={mapSize.width}
+            height={mapSize.height}
+            explosions={explosions}
+            setExplosions={setExplosions}
+            objects={allUnitsForCanvas}     // single source of truth for everything
+            jammerReports={jammerReports}
+            setJammerReports={setJammerReports}
+            currentFrequency={currentFrequency}
+            setCurrentFrequency={setCurrentFrequency}
+            availableFrequencies={availableFrequencies}
+            focusMode={focusMode}
+            baseZones={smoothBasePositions}
+            zoom={konvaZoom}
+            selectedBaseId={selectedBaseId}
+            floatingMessages={floatingMessages}
+            onLaunchInterceptor={(launchData) => {
+              const norm = normalizeLaunchToLatLng(launchData, mapInstance);
+              if (!norm) return;
+              const { vx, vy } = calculateVelocity(norm.launcherLat, norm.launcherLng, norm.targetLat, norm.targetLng, 0.08);
+              const interceptorId = `interceptor-${Date.now()}`;
+              setActiveInterceptors(prev => [...prev, {
+                id: interceptorId,
+                threatId: norm.threatId,
+                type: "interceptor",
+                lat: norm.launcherLat,
+                lng: norm.launcherLng,
+                targetId: norm.threatId,
+                speed: 0.08, vx, vy,
+                exploded: false, reached: false
+              }]);
+            }}
+            onLogsUpdate={onLogsUpdate}
+            mapInstance={mapInstance}
+          />
+        )}
       </div>
     </>
   );

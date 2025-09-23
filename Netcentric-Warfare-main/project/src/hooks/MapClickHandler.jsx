@@ -1,14 +1,12 @@
-import { useRef } from "react";
 import { useMapEvents } from "react-leaflet";
 import * as L from "leaflet";
 
-// 🔹 Enemy launch zones
 const LAUNCH_ZONES = [
-  { id: "pakistan-north", polygon: [[35.0, 74.5],[34.0, 74.0],[33.5, 73.5],[33.5, 74.5]] },
-  { id: "pakistan-south", polygon: [[25.5, 67.5],[25.0, 67.0],[24.5, 67.0],[24.5, 67.5]] },
-  { id: "arabian-sea", polygon: [[22.0, 65.5],[20.0, 65.5],[18.0, 67.0],[18.0, 69.0],[22.0, 69.0]] },
-  { id: "bay-of-bengal", polygon: [[17.0, 87.0],[15.0, 87.0],[13.0, 89.0],[14.0, 91.0],[17.0, 89.0]] },
-  { id: "indian-ocean", polygon: [[10.0, 72.0],[7.0, 72.0],[6.0, 74.0],[7.0, 76.0],[10.0, 75.0]] },
+  { id: "pakistan-north", polygon: [[35,74.5],[34,74],[33.5,73.5],[33.5,74.5]] },
+  { id: "pakistan-south", polygon: [[25.5,67.5],[25,67],[24.5,67],[24.5,67.5]] },
+  { id: "arabian-sea", polygon: [[22,65.5],[20,65.5],[18,67],[18,69],[22,69]] },
+  { id: "bay-of-bengal", polygon: [[17,87],[15,87],[13,89],[14,91],[17,89]] },
+  { id: "indian-ocean", polygon: [[10,72],[7,72],[6,74],[7,76],[10,75]] },
 ];
 
 function isInsideLaunchZone(latlng) {
@@ -16,9 +14,8 @@ function isInsideLaunchZone(latlng) {
     L.polygon(zone.polygon).getBounds().contains(L.latLng(latlng))
   );
 }
-export default function MapClickHandler({ step, selectedSpawnType, onSpawn }) {
-  const jammerCooldown = useRef(false);
 
+export default function MapClickHandler({ step, selectedSpawnType, onSpawn }) {
   useMapEvents({
     click(e) {
       if (step !== "launch") return;
@@ -28,20 +25,19 @@ export default function MapClickHandler({ step, selectedSpawnType, onSpawn }) {
         return;
       }
 
+      const now = Date.now();
       const fixedTarget = { id: "base-fixed", coords: [28.6139, 77.209] };
-      console.log("Launching type:", selectedSpawnType);
-
       let spawnData;
 
       switch ((selectedSpawnType || "missile").toLowerCase()) {
         case "drone":
           spawnData = {
-            id: `drone-${Date.now()}`,
+            id: `drone-${now}`,
             type: "drone",
             baseId: fixedTarget.id,
-            startLat: e.latlng.lat, // clicked location
+            startLat: e.latlng.lat,
             startLng: e.latlng.lng,
-            targetLat: fixedTarget.coords[0], // base location
+            targetLat: fixedTarget.coords[0],
             targetLng: fixedTarget.coords[1],
             patrolPath: [
               [e.latlng.lat, e.latlng.lng],
@@ -53,41 +49,38 @@ export default function MapClickHandler({ step, selectedSpawnType, onSpawn }) {
 
         case "artillery":
           spawnData = {
-            id: `artillery-${Date.now()}`,
+            id: `artillery-${now}`,
             type: "artillery",
             baseId: fixedTarget.id,
-            startLat: e.latlng.lat,   // FIXED: start at click location
+            startLat: e.latlng.lat,
             startLng: e.latlng.lng,
-            targetLat: fixedTarget.coords[0], // aim toward base
+            targetLat: fixedTarget.coords[0],
             targetLng: fixedTarget.coords[1],
           };
           break;
 
         case "jammer":
-          if (jammerCooldown.current) {
-            alert("⚠️ Jammer cooling down!");
-            return;
-          }
+          // ✅ Spawn immediately without cooldown
           spawnData = {
-            id: `jammer-${Date.now()}`,
+            id: `jammer-${now}`,
             type: "jammer",
+            lat: e.latlng.lat,        // <- Add this
+  lng: e.latlng.lng, 
             baseId: fixedTarget.id,
             startLat: e.latlng.lat,
             startLng: e.latlng.lng,
             radius: 0.02,
           };
-          jammerCooldown.current = true;
-          setTimeout(() => (jammerCooldown.current = false), 5000);
           break;
 
         default:
           spawnData = {
-            id: `missile-${Date.now()}`,
+            id: `missile-${now}`,
             type: "missile",
             baseId: fixedTarget.id,
-            startLat: e.latlng.lat,  // clicked location
+            startLat: e.latlng.lat,
             startLng: e.latlng.lng,
-            targetLat: fixedTarget.coords[0], // base location
+            targetLat: fixedTarget.coords[0],
             targetLng: fixedTarget.coords[1],
           };
       }

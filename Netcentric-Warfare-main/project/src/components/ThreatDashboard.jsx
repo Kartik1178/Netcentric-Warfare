@@ -4,7 +4,7 @@ import { ChevronDown, ChevronRight, Target, AlertTriangle, Zap } from 'lucide-re
 export const ThreatDashboard = ({ onThreatSelect }) => {
   const [expandedCategories, setExpandedCategories] = useState(new Set(['air']));
 
-  // ---------------- Individual States ----------------
+  // ---------------- States ----------------
   const [missiles, setMissiles] = useState([]);
   const [loadingMissiles, setLoadingMissiles] = useState(true);
 
@@ -46,38 +46,22 @@ export const ThreatDashboard = ({ onThreatSelect }) => {
 
   // ---------------- Fetch Drones ----------------
   useEffect(() => {
-    const fetchDrones = async () => {
-      try {
-        const demoDrones = [
-          { id: 'drone-1', name: 'MQ-9 Reaper', type: 'drone', origin: 'USA', specifications: { range: '1800 km', speed: 'Mach 0.5' } },
-          { id: 'drone-2', name: 'Bayraktar TB2', type: 'drone', origin: 'Turkey', specifications: { range: '150 km', speed: 'Mach 0.4' } }
-        ];
-        setDrones(demoDrones);
-      } catch (err) {
-        console.error(err);
-      } finally {
-        setLoadingDrones(false);
-      }
-    };
-    fetchDrones();
+    const demoDrones = [
+      { id: 'drone-1', name: 'MQ-9 Reaper', type: 'drone', origin: 'USA', specifications: { range: '1800 km', speed: 'Mach 0.5' } },
+      { id: 'drone-2', name: 'Bayraktar TB2', type: 'drone', origin: 'Turkey', specifications: { range: '150 km', speed: 'Mach 0.4' } }
+    ];
+    setDrones(demoDrones);
+    setLoadingDrones(false);
   }, []);
 
   // ---------------- Fetch Artillery ----------------
   useEffect(() => {
-    const fetchArtillery = async () => {
-      try {
-        const demoArtillery = [
-          { id: 'artillery-1', name: 'M777 Howitzer', type: 'artillery', origin: 'USA', specifications: { range: '30 km', speed: 'Mach 0.2' } },
-          { id: 'artillery-2', name: 'K9 Thunder', type: 'artillery', origin: 'South Korea', specifications: { range: '40 km', speed: 'Mach 0.2' } }
-        ];
-        setArtillery(demoArtillery);
-      } catch (err) {
-        console.error(err);
-      } finally {
-        setLoadingArtillery(false);
-      }
-    };
-    fetchArtillery();
+    const demoArtillery = [
+      { id: 'artillery-1', name: 'M777 Howitzer', type: 'artillery', origin: 'USA', specifications: { range: '30 km', speed: 'Mach 0.2' } },
+      { id: 'artillery-2', name: 'K9 Thunder', type: 'artillery', origin: 'South Korea', specifications: { range: '40 km', speed: 'Mach 0.2' } }
+    ];
+    setArtillery(demoArtillery);
+    setLoadingArtillery(false);
   }, []);
 
   // ---------------- Fetch Jammers ----------------
@@ -86,19 +70,25 @@ export const ThreatDashboard = ({ onThreatSelect }) => {
       try {
         const res = await fetch('http://localhost:3000/api/jammers');
         const data = await res.json();
+
         const transformed = data.map(jammer => ({
           id: jammer._id,
           name: jammer.Name,
+          category: 'jammer',
           type: jammer.Type,
-          frequency: jammer.Frequency_Band,
-          range: `${jammer.Range_km} km`,
-          power: `${jammer.Power_Watts} W`,
-          country: jammer.Country,
-          platform: jammer.Platform,
-          year: jammer.Year_Introduced,
-          status: jammer.Status,
-          notes: jammer.Notes
+          origin: jammer.Country,
+          specifications: {
+            range: jammer.Range_km ? `${jammer.Range_km} km` : "N/A",
+            speed: "N/A",
+            power: jammer.Power_Watts ? `${jammer.Power_Watts} W` : "N/A",
+            platform: jammer.Platform || "N/A",
+          },
+          status: jammer.Status || "Unknown",
+          notes: jammer.Notes || "",
+          year: jammer.Year_Introduced || "N/A",
+          frequency: jammer.Frequency_Band || "N/A",
         }));
+
         setJammers(transformed);
       } catch (err) {
         console.error('Failed to fetch jammers:', err);
@@ -148,7 +138,11 @@ export const ThreatDashboard = ({ onThreatSelect }) => {
           {expandedCategories.has(keyPrefix) && (
             <div className="border-t border-slate-700/50">
               {items.map((item) => (
-                <button key={item.id} onClick={() => onThreatSelect(item)} className="w-full p-4 text-left hover:bg-slate-700/30 transition-all duration-200 border-b border-slate-700/30 last:border-b-0 group">
+                <button
+                  key={item.id}
+                  onClick={() => onThreatSelect(item, keyPrefix === 'jammer' ? 'jammer' : 'threat')}
+                  className="w-full p-4 text-left hover:bg-slate-700/30 transition-all duration-200 border-b border-slate-700/30 last:border-b-0 group"
+                >
                   <div className="flex items-start justify-between">
                     <div className="flex-1">
                       <div className="flex items-center gap-2 mb-2">
