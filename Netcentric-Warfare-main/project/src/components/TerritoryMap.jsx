@@ -137,47 +137,98 @@ export default function TerritoryMap(props) {
   }, [newMissile, newDrone, newArtillery, newJammer, mapInstance]);
 
   // --- Animate objects & interceptors ---
-  useEffect(() => {
-    const interval = setInterval(() => {
-      // Move threats
-      setGlobalObjects(prev => prev.map(obj => {
-        if (["missile","drone","artillery"].includes(obj.type) && !obj.exploded) {
+// --- Animate objects & interceptors ---
+useEffect(() => {
+  const interval = setInterval(() => {
+    // Move threats
+    setGlobalObjects(prev =>
+      prev.map(obj => {
+        if (["missile", "drone", "artillery"].includes(obj.type) && !obj.exploded) {
+          // ✅ Distance check
+          const dx = obj.targetLng - obj.lng;
+          const dy = obj.targetLat - obj.lat;
+          const dist = Math.sqrt(dx * dx + dy * dy);
+
+          if (dist < 0.05) {
+            console.log(`[TerritoryMap] 🎯 ${obj.type.toUpperCase()} reached target ${obj.baseId}`);
+            return { ...obj, reached: true, exploded: true }; // stop moving
+          }
+
           const newLat = obj.lat + obj.vy;
           const newLng = obj.lng + obj.vx;
-          const point = mapInstance?.latLngToContainerPoint([newLat, newLng]) || { x: obj.x, y: obj.y };
-          return { ...obj, lat: newLat, lng: newLng, x: point.x, y: point.y };
+          const point =
+            mapInstance?.latLngToContainerPoint([newLat, newLng]) || {
+              x: obj.x,
+              y: obj.y,
+            };
+
+          return {
+            ...obj,
+            lat: newLat,
+            lng: newLng,
+            x: point.x,
+            y: point.y,
+          };
         }
+
         if (obj.type === "jammer" && mapInstance) {
           const point = mapInstance.latLngToContainerPoint([obj.lat, obj.lng]);
           return { ...obj, x: point.x, y: point.y };
         }
-        return obj;
-      }));
 
-      // Move interceptors
-      setActiveInterceptors(prev => prev.map(intc => {
+        return obj;
+      })
+    );
+
+    // Move interceptors (unchanged)
+    setActiveInterceptors(prev =>
+      prev.map(intc => {
         if (intc.exploded || intc.reached) return intc;
-        const targetObj = globalObjectsRef.current.find(o => o.id === intc.targetId && !o.exploded);
+        const targetObj = globalObjectsRef.current.find(
+          o => o.id === intc.targetId && !o.exploded
+        );
         if (!targetObj) return { ...intc, exploded: true };
 
-        const { vx, vy } = calculateVelocity(intc.lat, intc.lng, targetObj.lat, targetObj.lng, intc.speed);
+        const { vx, vy } = calculateVelocity(
+          intc.lat,
+          intc.lng,
+          targetObj.lat,
+          targetObj.lng,
+          intc.speed
+        );
         const dx = targetObj.lng - intc.lng;
         const dy = targetObj.lat - intc.lat;
-        const dist = Math.sqrt(dx*dx + dy*dy);
+        const dist = Math.sqrt(dx * dx + dy * dy);
 
         if (dist < 0.05) {
-          const point = mapInstance?.latLngToContainerPoint([targetObj.lat, targetObj.lng]);
-          if (point) setExplosions(prev => [...prev, { x: point.x, y: point.y }]);
-          setGlobalObjects(prev => prev.map(o => o.id === targetObj.id ? { ...o, exploded: true } : o));
+          const point = mapInstance?.latLngToContainerPoint([
+            targetObj.lat,
+            targetObj.lng,
+          ]);
+          if (point)
+            setExplosions(prev => [...prev, { x: point.x, y: point.y }]);
+          setGlobalObjects(prev =>
+            prev.map(o =>
+              o.id === targetObj.id ? { ...o, exploded: true } : o
+            )
+          );
           return { ...intc, exploded: true };
         }
 
-        return { ...intc, vx, vy, lat: intc.lat + vy, lng: intc.lng + vx };
-      }));
-    }, 30);
+        return {
+          ...intc,
+          vx,
+          vy,
+          lat: intc.lat + vy,
+          lng: intc.lng + vx,
+        };
+      })
+    );
+  }, 30);
 
-    return () => clearInterval(interval);
-  }, [mapInstance]);
+  return () => clearInterval(interval);
+}, [mapInstance]);
+
 
   // --- Project all for Canvas ---
   const baseUnitsToScale = globalObjects.filter(o => !["missile","drone","artillery","interceptor","jammer"].includes(o.type));
