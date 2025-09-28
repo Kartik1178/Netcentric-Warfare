@@ -148,11 +148,26 @@ useEffect(() => {
           const dx = obj.targetLng - obj.lng;
           const dy = obj.targetLat - obj.lat;
           const dist = Math.sqrt(dx * dx + dy * dy);
+// --- Distance thresholds in degrees (approximate real-world distances)
+const THRESHOLDS = {
+  missile: 0.002,   // ~200 m
+  drone: 0.005,     // ~500 m
+  artillery: 0.05,  // ~5 km
+};
 
-          if (dist < 0.05) {
-            console.log(`[TerritoryMap] 🎯 ${obj.type.toUpperCase()} reached target ${obj.baseId}`);
-            return { ...obj, reached: true, exploded: true }; // stop moving
-          }
+if (dist < (THRESHOLDS[obj.type] || 0.05)) {
+  console.log(`[TerritoryMap] 🎯 ${obj.type.toUpperCase()} reached target ${obj.baseId}`);
+
+  if (obj.type === "missile") {
+    // missiles explode/disappear
+    return { ...obj, reached: true, exploded: true };
+  } else if (obj.type === "drone" || obj.type === "artillery") {
+    // drones/artillery stay and can attack
+    return { ...obj, reached: true, vx: 0, vy: 0 };
+  }
+}
+
+
 
           const newLat = obj.lat + obj.vy;
           const newLng = obj.lng + obj.vx;
