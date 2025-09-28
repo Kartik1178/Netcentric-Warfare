@@ -160,6 +160,7 @@ const handleBaseClick = (base) => {
 <MapClickHandler
   step={step}
   selectedSpawnType={selectedSpawnType} // You can add a state to select "missile", "drone", "artillery", "jammer"
+
   onSpawn={(spawnData) => {
     switch (spawnData.type) {
       case "missile":

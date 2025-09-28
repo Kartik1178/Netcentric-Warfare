@@ -8,10 +8,12 @@ import Missile from "./Missile";
 import { Interceptor } from "./Interceptor";
 import Explosion from "../Explosion";
 import CentralAIUnit from "./CentralAIUnit";
+
 import DefenseJammer from "./DefenseJammer"; // <-- base defense jammer
 import { CENTRAL_AI_POSITION } from "../../constants/AIconstant";
 import FloatingMessages from "./FloatingMessages";
-import { DroneUnit, ArtilleryUnit } from "./Unit";
+import { DroneUnit } from "./DroneUnit";
+import { ArtilleryUnit } from "./ArtilleryUnit";
 
 // Orbit hook for drones
 const useOrbit = (centerX, centerY, radius, speed = 0.02) => {
@@ -184,30 +186,13 @@ export default function GridCanvas(props) {
         {interceptors.map(i => <Interceptor key={i.id} x={i.x} y={i.y} radius={scaleByZoom(zoom,10,6,20)} />)}
 
         {/* Free-floating Jammers */}
-        {jammers.map(j => (
         
-          <Group key={j.id}>
-            <Jammer
-              x={j.x}
-              y={j.y}
-              radius={scaleByZoom(zoom, 18, 10, 28)}
-            />
-            {/* Debug label */}
-            <Text
-              x={j.x + 10}
-              y={j.y - 10}
-              text={`JAMMER\n${j.id.split("-")[1]}`}
-              fontSize={12}
-              fill="cyan"
-              align="center"
-            />
-          </Group>
-        ))}
 
         {/* Drones */}
         {drones.map(d => (
           <Group key={d.id}>
             <DroneUnit
+              id={d.id}        
               x={d.x}
               y={d.y}
               radius={scaleByZoom(zoom, 15, 8, 25)}
@@ -215,7 +200,7 @@ export default function GridCanvas(props) {
             <Text
               x={d.x + 10}
               y={d.y - 10}
-              text={`DRONE\n${d.id.split("-")[1]}`}
+             text={`DRONE\n${d.id ? d.id.split("-")[1] ?? d.id : "unknown"}`}
               fontSize={12}
               fill="yellow"
               align="center"
