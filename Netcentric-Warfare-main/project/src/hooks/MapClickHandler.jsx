@@ -1,8 +1,10 @@
+// MapClickHandler.jsx
 import { useRef } from "react";
 import { useMapEvents } from "react-leaflet";
 import * as L from "leaflet";
+import { findNearestBase } from "../utils/FindNearestBase";
 
-// 🔹 Enemy launch zones
+// Enemy launch zones (kept from your file)
 const LAUNCH_ZONES = [
   { id: "pakistan-north", polygon: [[35.0, 74.5],[34.0, 74.0],[33.5, 73.5],[33.5, 74.5]] },
   { id: "pakistan-south", polygon: [[25.5, 67.5],[25.0, 67.0],[24.5, 67.0],[24.5, 67.5]] },
@@ -16,6 +18,7 @@ function isInsideLaunchZone(latlng) {
     L.polygon(zone.polygon).getBounds().contains(L.latLng(latlng))
   );
 }
+
 export default function MapClickHandler({ step, selectedSpawnType, onSpawn }) {
   const jammerCooldown = useRef(false);
 
@@ -28,21 +31,28 @@ export default function MapClickHandler({ step, selectedSpawnType, onSpawn }) {
         return;
       }
 
-      const fixedTarget = { id: "base-fixed", coords: [28.6139, 77.209] };
-      console.log("Launching type:", selectedSpawnType);
+      // Hard-coded New Delhi coordinates (target for missiles)
+      const NEW_DELHI = { id: "new-delhi", coords: [28.6139, 77.2090] };
+
+      // For drones/artillery we want the nearest base to the click location
+      const nearestBase = findNearestBase(e.latlng.lat, e.latlng.lng);
 
       let spawnData;
 
-      switch ((selectedSpawnType || "missile").toLowerCase()) {
-        case "drone":
+      const type = (selectedSpawnType || "missile").toLowerCase();
+
+      switch (type) {
+        case "drone": {
+          // Drone spawns at click location, targets nearest base (so it can patrol/attack there)
+          const target = nearestBase ? nearestBase.coords : NEW_DELHI.coords;
           spawnData = {
             id: `drone-${Date.now()}`,
             type: "drone",
-            baseId: fixedTarget.id,
-            startLat: e.latlng.lat, // clicked location
+            baseId: nearestBase ? nearestBase.id : "base-unknown",
+            startLat: e.latlng.lat,
             startLng: e.latlng.lng,
-            targetLat: fixedTarget.coords[0], // base location
-            targetLng: fixedTarget.coords[1],
+            targetLat: target[0],
+            targetLng: target[1],
             patrolPath: [
               [e.latlng.lat, e.latlng.lng],
               [e.latlng.lat + 0.01, e.latlng.lng + 0.01],
@@ -50,20 +60,24 @@ export default function MapClickHandler({ step, selectedSpawnType, onSpawn }) {
             ],
           };
           break;
+        }
 
-        case "artillery":
+        case "artillery": {
+          // Artillery spawns at click location, aims at nearest base
+          const target = nearestBase ? nearestBase.coords : NEW_DELHI.coords;
           spawnData = {
             id: `artillery-${Date.now()}`,
             type: "artillery",
-            baseId: fixedTarget.id,
-            startLat: e.latlng.lat,   // FIXED: start at click location
+            baseId: nearestBase ? nearestBase.id : "base-unknown",
+            startLat: e.latlng.lat,
             startLng: e.latlng.lng,
-            targetLat: fixedTarget.coords[0], // aim toward base
-            targetLng: fixedTarget.coords[1],
+            targetLat: target[0],
+            targetLng: target[1],
           };
           break;
+        }
 
-        case "jammer":
+        case "jammer": {
           if (jammerCooldown.current) {
             alert("⚠️ Jammer cooling down!");
             return;
@@ -71,7 +85,7 @@ export default function MapClickHandler({ step, selectedSpawnType, onSpawn }) {
           spawnData = {
             id: `jammer-${Date.now()}`,
             type: "jammer",
-            baseId: fixedTarget.id,
+            baseId: nearestBase ? nearestBase.id : "base-unknown",
             startLat: e.latlng.lat,
             startLng: e.latlng.lng,
             radius: 0.02,
@@ -79,21 +93,34 @@ export default function MapClickHandler({ step, selectedSpawnType, onSpawn }) {
           jammerCooldown.current = true;
           setTimeout(() => (jammerCooldown.current = false), 5000);
           break;
+        }
 
-        default:
+        default: {
+          // Missile: always target New Delhi (hard-coded)
           spawnData = {
             id: `missile-${Date.now()}`,
             type: "missile",
-            baseId: fixedTarget.id,
-            startLat: e.latlng.lat,  // clicked location
+            baseId: "enemy-launch", // or fixedTarget.id
+            startLat: e.latlng.lat,
             startLng: e.latlng.lng,
-            targetLat: fixedTarget.coords[0], // base location
-            targetLng: fixedTarget.coords[1],
+            targetLat: NEW_DELHI.coords[0],
+            targetLng: NEW_DELHI.coords[1],
           };
+        }
+      }
+
+      // Safety: ensure target/start exist
+      if (spawnData.startLat == null || spawnData.startLng == null) {
+        console.error("Invalid spawn coordinates", spawnData);
+        return;
+      }
+      if (spawnData.targetLat == null || spawnData.targetLng == null) {
+        console.error("Invalid target coordinates", spawnData);
+        return;
       }
 
       onSpawn(spawnData);
-      console.log("Spawned:", spawnData.type);
+      console.log("Spawned:", spawnData.type, spawnData);
     },
   });
 

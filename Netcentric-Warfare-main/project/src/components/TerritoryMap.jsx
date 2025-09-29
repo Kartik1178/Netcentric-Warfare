@@ -23,15 +23,9 @@ const LAUNCH_ZONES = [
 ];
 
 function calculateVelocity(startLat, startLng, targetLat, targetLng, speed = 0.05) {
-  let dx = targetLng - startLng;
-  let dy = targetLat - startLat;
-  let dist = Math.sqrt(dx * dx + dy * dy);
-  if (dist < 0.0001) {
-    const angle = Math.random() * 2 * Math.PI;
-    dx = Math.cos(angle) * 0.001;
-    dy = Math.sin(angle) * 0.001;
-    dist = 0.001;
-  }
+  const dx = targetLng - startLng;
+  const dy = targetLat - startLat;
+  const dist = Math.sqrt(dx * dx + dy * dy) || 0.001; // prevent divide by 0
   return { vx: (dx / dist) * speed, vy: (dy / dist) * speed };
 }
 
@@ -57,30 +51,19 @@ export default function TerritoryMap(props) {
   const { pixelPositions, zoom: konvaZoom } = useLeafletToKonvaTransform({ mapInstance, baseData: BASES, mapSize });
   const smoothBasePositions = useSmoothPositions(pixelPositions, 300);
 
-  // Generate base units with logs
+  // Generate base units
   useEffect(() => {
     if (!pixelPositions || Object.keys(pixelPositions).length === 0) return;
-
     const generateUnitsForBase = (baseId) => {
-      const baseData = BASES.find((b) => b.id === baseId);
+      const baseData = BASES.find(b => b.id === baseId);
       if (!baseData) return [];
       const dynamicRadius = konvaZoom >= 15 ? 80 : konvaZoom >= 13 ? 70 : 60;
-
-      const units = Array.from({ length: 4 }).flatMap((_, i) => {
+      return Array.from({ length: 4 }).flatMap((_, i) => {
         const subBaseId = `${baseId}-sub${i + 1}`;
-        const localUnits = generateBaseUnits(subBaseId, baseData.type, dynamicRadius);
-        const mappedUnits = localUnits.map(u => ({ ...u, localX: u.x, localY: u.y }));
-
-        return mappedUnits;
+        return generateBaseUnits(subBaseId, baseData.type, dynamicRadius).map(u => ({ ...u, localX: u.x, localY: u.y }));
       });
-
-      return units;
     };
-
-    const allUnits = focusMode && selectedBaseId
-      ? generateUnitsForBase(selectedBaseId)
-      : BASES.flatMap(b => generateUnitsForBase(b.id));
-
+    const allUnits = focusMode && selectedBaseId ? generateUnitsForBase(selectedBaseId) : BASES.flatMap(b => generateUnitsForBase(b.id));
     setGlobalObjects(prev => [
       ...prev.filter(o => ["missile","drone","artillery","interceptor"].includes(o.type)),
       ...allUnits
@@ -89,16 +72,13 @@ export default function TerritoryMap(props) {
 
   const VELOCITY_BY_TYPE = { missile: 0.05, drone: 0.02, artillery: 0.015 };
 
-  // Spawn new objects with logs
+  // Spawn new objects
   useEffect(() => {
     const newObjs = [newMissile, newDrone, newArtillery].filter(Boolean);
     newObjs.forEach(objData => {
       if (!objData || spawnedObjects.current.has(objData.id)) return;
       const speed = VELOCITY_BY_TYPE[objData.type] || 0.05;
       const { vx, vy } = calculateVelocity(objData.startLat, objData.startLng, objData.targetLat, objData.targetLng, speed);
-
-      console.log(`[Spawn Object] id:${objData.id} type:${objData.type} start:(${objData.startLat},${objData.startLng}) target:(${objData.targetLat},${objData.targetLng}) vx:${vx} vy:${vy}`);
-
       setGlobalObjects(prev => [...prev, {
         id: objData.id, type: objData.type,
         lat: objData.startLat, lng: objData.startLng,
@@ -109,69 +89,81 @@ export default function TerritoryMap(props) {
     });
   }, [newMissile, newDrone, newArtillery]);
 
-  // Animate objects & interceptors with logs
-  useEffect(() => {
-    const interval = setInterval(() => {
-      setGlobalObjects(prev => prev.map(obj => {
-        if (["missile","drone","artillery"].includes(obj.type) && !obj.exploded) {
-          const dx = obj.targetLng - obj.lng;
-          const dy = obj.targetLat - obj.lat;
-          const dist = Math.sqrt(dx*dx + dy*dy);
-          if (dist < 0.001) return {...obj, reached:true};
-          const newObj = {...obj, lat: obj.lat + obj.vy, lng: obj.lng + obj.vx};
-
-          return newObj;
-        }
-        return obj;
-      }));
-
-      setActiveInterceptors(prev => prev.map(intc => {
-        if (intc.exploded || intc.reached) return intc;
-        const targetObj = globalObjectsRef.current.find(o => o.id === intc.targetId && !o.exploded);
-        if (!targetObj) return {...intc, exploded:true};
-
-        const { vx, vy } = calculateVelocity(intc.lat, intc.lng, targetObj.lat, targetObj.lng, intc.speed);
-        const dx = targetObj.lng - intc.lng;
-        const dy = targetObj.lat - intc.lat;
+  // Animate objects & interceptors with proper stop at target
+// Animate objects & interceptors with proper stop at target
+useEffect(() => {
+  const THRESHOLDS = { missile: 0.001, drone: 0.001, artillery: 0.001 };
+  const interval = setInterval(() => {
+    // Update globalObjects
+    setGlobalObjects(prev => prev.map(obj => {
+      if (["missile","drone","artillery"].includes(obj.type) && !obj.exploded && !obj.reached) {
+        const dx = obj.targetLng - obj.lng;
+        const dy = obj.targetLat - obj.lat;
         const dist = Math.sqrt(dx*dx + dy*dy);
 
-        console.log(`[Interceptor Move] id:${intc.id} lat:${intc.lat.toFixed(5)} lng:${intc.lng.toFixed(5)} target:${targetObj.id} dist:${dist.toFixed(5)}`);
-
-        if (dist < 0.05) {
-          if (mapInstance) {
-            const point = mapInstance.latLngToContainerPoint([targetObj.lat, targetObj.lng]);
-            setExplosions(prev => [...prev, {x:point.x, y:point.y}]);
+        // Check arrival
+        if (dist < (THRESHOLDS[obj.type] || 0.001)) {
+          console.log(`[TerritoryMap] 🎯 ${obj.type.toUpperCase()} reached target ${obj.baseId} (id=${obj.id})`);
+          if (obj.type === "missile") {
+            return { ...obj, lat: obj.targetLat, lng: obj.targetLng, reached: true, exploded: true };
+          } else {
+            // Drone / artillery stop exactly at target
+            return { ...obj, lat: obj.targetLat, lng: obj.targetLng, reached: true, vx: 0, vy: 0 };
           }
-          setGlobalObjects(prev => prev.map(o => o.id === targetObj.id ? {...o, exploded:true} : o));
-          return {...intc, exploded:true};
         }
-        return {...intc, vx, vy, lat: intc.lat+vy, lng: intc.lng+vx};
-      }));
-    }, 30);
 
-    return () => clearInterval(interval);
-  }, []);
+        // Recalculate velocity dynamically only if not reached
+        const { vx, vy } = calculateVelocity(obj.lat, obj.lng, obj.targetLat, obj.targetLng, obj.speed);
+        return { ...obj, lat: obj.lat + vy, lng: obj.lng + vx, vx, vy };
+      }
+      return obj;
+    }));
+
+    // Interceptor animation (unchanged)
+    setActiveInterceptors(prev => prev.map(intc => {
+      if (intc.exploded || intc.reached) return intc;
+      const targetObj = globalObjectsRef.current.find(o => o.id === intc.targetId && !o.exploded);
+      if (!targetObj) return { ...intc, exploded: true };
+
+      const { vx, vy } = calculateVelocity(intc.lat, intc.lng, targetObj.lat, targetObj.lng, intc.speed);
+      const dx = targetObj.lng - intc.lng;
+      const dy = targetObj.lat - intc.lat;
+      const dist = Math.sqrt(dx*dx + dy*dy);
+
+      if (dist < 0.05) {
+        if (mapInstance) {
+          const point = mapInstance.latLngToContainerPoint([targetObj.lat, targetObj.lng]);
+          setExplosions(prev => [...prev, { x: point.x, y: point.y }]);
+        }
+        setGlobalObjects(prev => prev.map(o => o.id === targetObj.id ? { ...o, exploded: true } : o));
+        return { ...intc, exploded: true };
+      }
+
+      return { ...intc, vx, vy, lat: intc.lat + vy, lng: intc.lng + vx };
+    }));
+  }, 30);
+
+  return () => clearInterval(interval);
+}, []);
+
 
   const baseUnitsToScale = globalObjects.filter(o => !["missile","drone","artillery","interceptor"].includes(o.type));
   const scaledBaseUnits = useSubBaseUnits(baseUnitsToScale, konvaZoom);
 
-  // Project objects to pixel coordinates with logs
   const projectObjects = globalObjects
     .filter(o => ["missile","drone","artillery"].includes(o.type) && !o.exploded)
     .map(obj => {
       if (!mapInstance) return null;
       const point = mapInstance.latLngToContainerPoint([obj.lat,obj.lng]);
-
-      return {...obj, x:point?.x||0, y:point?.y||0};
+      return { ...obj, x: point?.x || 0, y: point?.y || 0 };
     }).filter(Boolean);
 
   const interceptorsInPixels = activeInterceptors
     .filter(o => !o.exploded)
     .map(obj => {
-      if (!mapInstance || obj.lat==null || obj.lng==null) return null;
+      if (!mapInstance || obj.lat == null || obj.lng == null) return null;
       const point = mapInstance.latLngToContainerPoint([obj.lat,obj.lng]);
-
-      return {...obj, x:point?.x||0, y:point?.y||0};
+      return { ...obj, x: point?.x || 0, y: point?.y || 0 };
     }).filter(Boolean);
 
   const allUnitsForCanvas = [...scaledBaseUnits, ...projectObjects, ...interceptorsInPixels];
@@ -193,11 +185,11 @@ export default function TerritoryMap(props) {
         <Polygon
           key={zone.id}
           positions={zone.polygon}
-          pathOptions={{color:zone.color, fillColor:zone.color, fillOpacity:0.3}}
+          pathOptions={{ color: zone.color, fillColor: zone.color, fillOpacity: 0.3 }}
         />
       ))}
 
-      <div className="absolute inset-0 w-full h-full" style={{zIndex:400, pointerEvents:"none"}}>
+      <div className="absolute inset-0 w-full h-full" style={{ zIndex: 400, pointerEvents: "none" }}>
         {mapInstance && mapSize.width && mapSize.height && (
           <GridCanvas
             width={mapSize.width}
@@ -220,7 +212,6 @@ export default function TerritoryMap(props) {
               if(!norm) return;
               const { vx, vy } = calculateVelocity(norm.launcherLat, norm.launcherLng, norm.targetLat, norm.targetLng, 0.08);
               const interceptorId = `interceptor-${Date.now()}`;
-
               setActiveInterceptors(prev => [...prev, {
                 id: interceptorId,
                 threatId: norm.threatId,
@@ -228,8 +219,8 @@ export default function TerritoryMap(props) {
                 lat: norm.launcherLat,
                 lng: norm.launcherLng,
                 targetId: norm.threatId,
-                speed:0.08, vx, vy,
-                exploded:false, reached:false
+                speed: 0.08, vx, vy,
+                exploded: false, reached: false
               }]);
             }}
             onLogsUpdate={onLogsUpdate}
