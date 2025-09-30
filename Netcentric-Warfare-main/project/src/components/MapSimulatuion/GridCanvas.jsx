@@ -1,5 +1,5 @@
 import React, { useEffect, useRef, useState } from "react";
-import { Stage, Layer, Group, Rect, Text, Line } from "react-konva";
+import { Stage, Layer, Group, Rect, Text, Line, Circle } from "react-konva";
 import Radar from "./RadarUnit";
 import Antenna from "./AntennaUnit";
 import DefenseJammer from "./DefenseJammer";
@@ -10,7 +10,7 @@ import Explosion from "../Explosion";
 import CentralAIUnit from "./CentralAIUnit";
 import { CENTRAL_AI_POSITION } from "../../constants/AIconstant";
 import FloatingMessages from "./FloatingMessages";
-import { DroneUnit,ArtilleryUnit } from "./Unit";
+import { DroneUnit, ArtilleryUnit } from "./Unit";
 
 // Orbit hook for drones
 const useOrbit = (centerX, centerY, radius, speed = 0.02) => {
@@ -72,9 +72,12 @@ const getSubBaseOffsets = (baseType, subBaseRadius) => {
 export default function GridCanvas(props) {
   const {
     width, height, objects, zoom, baseZones, floatingMessages,
-    explosions, setExplosions, jammerReports, setJammerReports,
+    explosions, setExplosions,
+    jammerReports, setJammerReports,
     currentFrequency, setCurrentFrequency, availableFrequencies,
-    focusMode, selectedBaseId, onLaunchInterceptor, onLogsUpdate
+    focusMode, selectedBaseId, onLaunchInterceptor, onLogsUpdate,
+    localThreats = {},          // { baseId: [ {id, type, x, y, speedPx, targetX, targetY} ] }
+    removeLocalThreat            // function(baseId, threatId)
   } = props;
 
   const stageRef = useRef();
@@ -84,9 +87,10 @@ export default function GridCanvas(props) {
   const missiles = objects.filter(o => o.type === "missile");
   const interceptors = objects.filter(o => o.type === "interceptor");
   const baseUnits = objects.filter(o => o.type !== "missile" && o.type !== "interceptor");
-const drones = objects.filter(o => o.type === "drone");
-const artilleryUnits = objects.filter(o => o.type === "artillery");
-  // Render a unit with hover tooltip
+  const drones = objects.filter(o => o.type === "drone");
+  const artilleryUnits = objects.filter(o => o.type === "artillery");
+
+  // Render unit with hover tooltip
   const renderUnit = (unit, offsetX, offsetY, basePos, unitRadius, subBaseCenter) => {
     const commonProps = {
       key: unit.id, id: unit.id, x: unit.x, y: unit.y, baseId: unit.baseId,
@@ -95,7 +99,7 @@ const artilleryUnits = objects.filter(o => o.type === "artillery");
       radius: unitRadius, listening: true
     };
 
-    const onMouseEnter = (e) => {
+    const onMouseEnter = () => {
       if (!stageRef.current) return;
       const pointerPos = stageRef.current.getPointerPosition();
       setTooltip({
@@ -117,10 +121,70 @@ const artilleryUnits = objects.filter(o => o.type === "artillery");
       case "antenna": return <Antenna {...commonProps} zoom={zoom} radius={unitRadius} onMouseEnter={onMouseEnter} onMouseLeave={onMouseLeave} />;
       case "jammer": return <DefenseJammer {...commonProps} onMouseEnter={onMouseEnter} onMouseLeave={onMouseLeave} />;
       case "launcher": return <Launcher {...commonProps} onLaunchInterceptor={onLaunchInterceptor} onMouseEnter={onMouseEnter} onMouseLeave={onMouseLeave} />;
-
       default: return null;
     }
   };
+
+  // Local mutable threats copy for animation
+  const localThreatsRef = useRef({});
+  useEffect(() => {
+    localThreatsRef.current = Object.keys(localThreats).reduce((acc, baseId) => {
+      acc[baseId] = [...(localThreatsRef.current[baseId] || []), ...(localThreats[baseId] || [])]
+        .filter((v, i, arr) => arr.findIndex(x => x.id === v.id) === i);
+          console.log(`[LocalThreats] Base: ${baseId}`, acc[baseId]);
+
+        return acc;
+    }, { ...localThreatsRef.current });
+  }, [localThreats]);
+
+  // Animate local threats
+  useEffect(() => {
+    const tick = setInterval(() => {
+      for (const [baseId, arr] of Object.entries(localThreatsRef.current)) {
+        if (!arr || arr.length === 0) continue;
+
+        for (let i = arr.length - 1; i >= 0; i--) {
+          const t = arr[i];
+          const dx = (t.targetX ?? 0) - t.x;
+          const dy = (t.targetY ?? 0) - t.y;
+          const dist = Math.sqrt(dx * dx + dy * dy) || 0.0001;
+          // slow down when near center
+const distFactor = Math.min(dist / 50, 1); // 50 pixels is the “slow radius”
+const speed = (t.speedPx || 3) * distFactor;
+const vx = (dx / dist) * speed;
+const vy = (dy / dist) * speed;
+ console.log(
+          `[ThreatAnim] Base:${baseId} | Threat:${t.id}`,
+          `Dist=${dist.toFixed(2)}px`,
+          `DistFactor=${distFactor.toFixed(2)}`,
+          `Speed=${speed.toFixed(2)} (raw=${t.speedPx || 3})`,
+          `vx=${vx.toFixed(2)} vy=${vy.toFixed(2)}`,
+          `Pos=(${t.x.toFixed(2)},${t.y.toFixed(2)})`
+        );
+t.x += vx;
+t.y += vy;
+
+
+          if (Math.sqrt(t.x * t.x + t.y * t.y) < 8) {
+            const basePixel = baseZones[baseId];
+            if (basePixel && setExplosions) {
+              setExplosions(prev => [...prev, { x: basePixel.x + t.x, y: basePixel.y + t.y }]);
+            }
+                     console.log(`[ThreatAnim] ${t.id} HIT base ${baseId}`);
+            arr.splice(i, 1);
+            if (removeLocalThreat) removeLocalThreat(baseId, t.id);
+          }
+        }
+      }
+
+      if (stageRef.current) {
+        const layer = stageRef.current.findOne("Layer");
+        if (layer) layer.batchDraw?.();
+      }
+    }, 30);
+
+    return () => clearInterval(tick);
+  }, [baseZones, removeLocalThreat, setExplosions]);
 
   return (
     <Stage ref={stageRef} width={width} height={height} style={{ position:"absolute", top:0, left:0 }}>
@@ -160,6 +224,14 @@ const artilleryUnits = objects.filter(o => o.type === "artillery");
               })}
 
               {!showSubBases && showUnits && baseUnits.filter(u=>u.baseId===baseId).map(unit => renderUnit(unit,0,0,basePos,unitRadius))}
+
+              {/* Local threats relative to base */}
+              {(localThreatsRef.current[baseId] || []).map(t => (
+                <Group key={t.id} x={t.x} y={t.y}>
+                  <Circle radius={8} fill="red" shadowBlur={4} />
+                </Group>
+              ))}
+
             </Group>
           );
         })}
@@ -167,37 +239,19 @@ const artilleryUnits = objects.filter(o => o.type === "artillery");
         {/* Central AI */}
         <CentralAIUnit id="central-ai-unit" label="C2 AI" x={CENTRAL_AI_POSITION.x} y={CENTRAL_AI_POSITION.y} />
 
-        {/* Missiles & interceptors */}
+        {/* Global missiles/interceptors/drones/artillery */}
         {missiles.map(m => <Missile key={m.id} x={m.x} y={m.y} radius={scaleByZoom(zoom,20,8,30)} />)}
         {interceptors.map(i => <Interceptor key={i.id} x={i.x} y={i.y} radius={scaleByZoom(zoom,10,6,20)} />)}
-{drones.map(d => (
-  <Group key={d.id}>
-    <DroneUnit
-      x={d.x}
-      y={d.y}
-      radius={scaleByZoom(zoom, 15, 8, 25)}
-    />
-    {/* Debug label */}
-    <Text
-      x={d.x + 10}
-      y={d.y - 10}
-      text={`DRONE\n${d.id.split("-")[1]}`}  // Shortened ID for readability
-      fontSize={12}
-      fill="yellow"
-      align="center"
-    />
-  </Group>
-))}
+        {drones.map(d => (
+          <Group key={d.id}>
+            <DroneUnit x={d.x} y={d.y} radius={scaleByZoom(zoom, 15, 8, 25)} />
+            <Text x={d.x + 10} y={d.y - 10} text={`DRONE\n${d.id.split("-")[1]}`} fontSize={12} fill="yellow" align="center" />
+          </Group>
+        ))}
+        {artilleryUnits.map(a => (
+          <ArtilleryUnit key={a.id} x={a.x} y={a.y} radius={scaleByZoom(zoom, 18, 10, 28)} onClick={() => console.log("Fire artillery!", a.id)} />
+        ))}
 
-{artilleryUnits.map(a => (
-  <ArtilleryUnit
-    key={a.id}
-    x={a.x}
-    y={a.y}
-    radius={scaleByZoom(zoom, 18, 10, 28)}
-    onClick={() => console.log("Fire artillery!", a.id)}
-  />
-))} 
         {/* Explosions */}
         {explosions.map((ex, idx) => (
           <Explosion key={idx} x={ex.x} y={ex.y} onAnimationEnd={()=>setExplosions(prev => prev.filter((_,i)=>i!==idx))} />
