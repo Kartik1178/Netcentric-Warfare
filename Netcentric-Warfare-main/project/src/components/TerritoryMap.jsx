@@ -259,20 +259,51 @@ export default function TerritoryMap(props) {
             zoom={konvaZoom}
             selectedBaseId={selectedBaseId}
             floatingMessages={floatingMessages}
-            onLaunchInterceptor={launchData => {
-              const norm = normalizeLaunchToLatLng(launchData, mapInstance);
-              if(!norm) return;
-              const { vx, vy } = calculateVelocity(norm.launcherLat, norm.launcherLng, norm.targetLat, norm.targetLng, 0.08);
-                console.log("[Interceptor Launch] Normalized:", norm, "vx/vy:", vx, vy);
+onLaunchInterceptor={launchData => {
+  if (!launchData) return;
 
-              setActiveInterceptors(prev => [...prev, {
-                id: `interceptor-${Date.now()}`, threatId: norm.threatId,
-                type: "interceptor",
-                lat: norm.launcherLat, lng: norm.launcherLng,
-                targetId: norm.threatId, speed: 0.08, vx, vy,
-                exploded: false, reached: false
-              }]);
-            }}
+  const { launcherId, threatId } = launchData;
+
+  // Find launcher in globalObjects
+  const launcher = globalObjects.find(o => o.id === launcherId);
+  if (!launcher) {
+    console.error("[Interceptor Launch] Launcher not found:", launcherId);
+    return;
+  }
+
+  // Find target missile/drone/artillery in globalObjects
+  const target = globalObjects.find(o => o.id === threatId && !o.exploded);
+  if (!target) {
+    console.error("[Interceptor Launch] Target not found or already exploded:", threatId);
+    return;
+  }
+
+  const launcherLat = launcher.lat;
+  const launcherLng = launcher.lng;
+  const targetLat = target.lat;
+  const targetLng = target.lng;
+
+  console.log("[Interceptor Launch] From launcherLat/lng:", launcherLat, launcherLng, 
+              "To targetLat/lng:", targetLat, targetLng);
+
+  const { vx, vy } = calculateVelocity(launcherLat, launcherLng, targetLat, targetLng, 0.08);
+
+  setActiveInterceptors(prev => [...prev, {
+    id: `interceptor-${Date.now()}`,
+    threatId,
+    type: "interceptor",
+    lat: launcherLat,
+    lng: launcherLng,
+    targetId: threatId,
+    speed: 0.08,
+    vx, vy,
+    exploded: false,
+    reached: false
+  }]);
+}}
+
+
+
             onLogsUpdate={onLogsUpdate}
             mapInstance={mapInstance}
           />

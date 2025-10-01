@@ -10,7 +10,7 @@ const PIXEL_TO_KM_SCALE = 0.1; // Placeholder: 1 pixel = 0.1 km. ADJUST THIS!
 
 export function getDistance(point1, point2) {
   // Debug log to see the exact inputs to getDistance
-  console.log(`[getDistance Utility] Received P1: ${JSON.stringify(point1)}, P2: ${JSON.stringify(point2)}`);
+
 
   // --- Haversine formula for Latitude/Longitude (returns distance in KM) ---
   if (point1.lat != null && point1.lng != null && point2.lat != null && point2.lng != null) {
@@ -24,7 +24,7 @@ export function getDistance(point1, point2) {
     const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
     const distanceInKm = R * c;
 
-    console.log(`[getDistance Utility] Calculated Lat/Lng distance: ${distanceInKm.toFixed(2)}km`);
+
     return distanceInKm;
   }
   // --- Euclidean distance for X/Y pixels (returns distance in pixels, then converted to KM) ---
@@ -36,7 +36,6 @@ export function getDistance(point1, point2) {
     // Convert pixel distance to kilometers using the defined scale
     const distanceInKm = distanceInPixels * PIXEL_TO_KM_SCALE; 
 
-    console.log(`[getDistance Utility] Calculated X/Y distance. dx: ${dx.toFixed(2)}, dy: ${dy.toFixed(2)}, Pixels: ${distanceInPixels.toFixed(2)}, KM: ${distanceInKm.toFixed(2)}`);
     return distanceInKm;
   }
   // --- Fallback for invalid input ---
