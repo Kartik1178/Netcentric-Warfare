@@ -2,42 +2,34 @@ import React, { useEffect, useRef } from "react";
 import { Text } from "react-konva";
 import Konva from "konva";
 
-export default function FloatingMessage({ x, y, text, duration = 2, color = "yellow" }) {
+export default function FloatingMessage({ text, duration = 2, color = "yellow" }) {
   const textRef = useRef();
-  
-  // ⚡️ CRITICAL FIX: Guard against empty or invalid text from the very start.
-  const isTextValid = text && typeof text === 'string' && text.trim() !== '';
-  const isCoordinatesValid = typeof x === 'number' && isFinite(x) && typeof y === 'number' && isFinite(y);
-  
-  if (!isTextValid || !isCoordinatesValid) {
-    return null;
-  }
-  
-  const displayText = text.trim();
+
+  if (!text || typeof text !== "string") return null;
 
   useEffect(() => {
     if (!textRef.current) return;
 
+    // Start at 0 relative to Group, tween moves UP -30
     const tween = new Konva.Tween({
       node: textRef.current,
-      duration: duration * 5,
-      y: y - 30,
+      duration: duration,
+      y: -30, // move up relative to the Group's origin
       opacity: 0,
       easing: Konva.Easings.EaseInOut,
     });
+
     tween.play();
 
-    return () => {
-      tween.destroy();
-    };
-  }, [x, y, text, duration, color]);
+    return () => tween.destroy();
+  }, [text, duration]);
 
   return (
     <Text
       ref={textRef}
-      x={x}
-      y={y}
-      text={displayText}
+      x={0}
+      y={0}
+      text={text}
       fontSize={16}
       fill={color}
       fontStyle="bold"

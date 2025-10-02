@@ -1,25 +1,33 @@
 import React from "react";
-import { Group } from "react-konva";
+import { Group,Circle } from "react-konva";
 import FloatingMessage from "./FloatingMessage";
 
 export default function FloatingMessages({ messages }) {
+  console.log("FloatingMessages rendered, messages:", messages); // 🔥 log incoming messages
+
   if (!messages || messages.length === 0) {
+    console.log("No messages to display.");
     return null;
   }
 
   return (
     <>
-      {messages.map((msg) => (
-        <Group key={msg.id} x={msg.x} y={msg.y}>
-          <FloatingMessage
-            x={0} // Render FloatingMessage at (0,0) relative to its parent Group.
-            y={0}
-            text={msg.text}
-            duration={msg.duration || 2}
-            color={msg.color}
-          />
-        </Group>
-      ))}
+      {messages.map((msg) => {
+        const validX = typeof msg.x === "number" && isFinite(msg.x);
+        const validY = typeof msg.y === "number" && isFinite(msg.y);
+        if (!validX || !validY) console.warn(`Invalid coordinates for message id=${msg.id}`, msg);
+
+        console.log(`Rendering message id=${msg.id} at (${msg.x}, ${msg.y}):`, msg.text);
+
+        return (
+         <Group key={msg.id} x={msg.x} y={msg.y}>
+  {/* Debug circle to check position */}
+  <Circle x={0} y={0} radius={5} fill="yellow" />
+  <FloatingMessage text={msg.text} duration={msg.duration || 2} color={msg.color} />
+</Group>
+
+        );
+      })}
     </>
   );
 }
