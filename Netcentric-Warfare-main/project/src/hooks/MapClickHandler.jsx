@@ -1,10 +1,12 @@
+
+
 // MapClickHandler.jsx
-import { useRef } from "react";
+import { useRef, useEffect } from "react";
 import { useMapEvents } from "react-leaflet";
 import * as L from "leaflet";
 import { findNearestBase } from "../utils/FindNearestBase";
 
-// Enemy launch zones (kept from your file)
+// Enemy launch zones
 const LAUNCH_ZONES = [
   { id: "pakistan-north", polygon: [[35.0, 74.5],[34.0, 74.0],[33.5, 73.5],[33.5, 74.5]] },
   { id: "pakistan-south", polygon: [[25.5, 67.5],[25.0, 67.0],[24.5, 67.0],[24.5, 67.5]] },
@@ -19,11 +21,55 @@ function isInsideLaunchZone(latlng) {
   );
 }
 
-export default function MapClickHandler({ step, selectedSpawnType, onSpawn }) {
+export default function MapClickHandler({
+  step,
+  selectedSpawnType,
+  onSpawn,
+  placingNewBase,
+  setPlacingNewBase, // 🔹 pass the setter
+  newBaseType,
+  setCustomBases,
+  onLogsUpdate
+}) {
   const jammerCooldown = useRef(false);
+  const basePlaced = useRef(false);
+  const placingBaseRef = useRef(placingNewBase);
+
+  // Keep ref in sync with prop
+  useEffect(() => {
+    placingBaseRef.current = placingNewBase;
+    if (placingNewBase) basePlaced.current = false;
+  }, [placingNewBase]);
 
   useMapEvents({
     click(e) {
+      // Handle new base placement
+      if (placingBaseRef.current && newBaseType) {
+        if (basePlaced.current) return;
+
+        const newBase = {
+          id: `custom-${Date.now()}`,
+          type: newBaseType,
+          coords: [e.latlng.lat, e.latlng.lng],
+        };
+        setCustomBases(prev => [...prev, newBase]);
+        basePlaced.current = true;
+
+        onLogsUpdate?.({
+          timestamp: new Date().toLocaleTimeString(),
+          source: "MapClickHandler",
+          type: "base-add",
+          message: `${newBase.type} Base added at [${newBase.coords[0].toFixed(2)}, ${newBase.coords[1].toFixed(2)}]`,
+          payload: newBase,
+        });
+
+        // Reset flags
+        placingBaseRef.current = false;
+        setPlacingNewBase(false);
+        return;
+      }
+
+      // Normal launch mode
       if (step !== "launch") return;
 
       if (!isInsideLaunchZone(e.latlng)) {
@@ -31,19 +77,14 @@ export default function MapClickHandler({ step, selectedSpawnType, onSpawn }) {
         return;
       }
 
-      // Hard-coded New Delhi coordinates (target for missiles)
       const NEW_DELHI = { id: "new-delhi", coords: [28.6139, 77.2090] };
-
-      // For drones/artillery we want the nearest base to the click location
       const nearestBase = findNearestBase(e.latlng.lat, e.latlng.lng);
 
       let spawnData;
-
       const type = (selectedSpawnType || "missile").toLowerCase();
 
       switch (type) {
         case "drone": {
-          // Drone spawns at click location, targets nearest base (so it can patrol/attack there)
           const target = nearestBase ? nearestBase.coords : NEW_DELHI.coords;
           spawnData = {
             id: `drone-${Date.now()}`,
@@ -63,7 +104,6 @@ export default function MapClickHandler({ step, selectedSpawnType, onSpawn }) {
         }
 
         case "artillery": {
-          // Artillery spawns at click location, aims at nearest base
           const target = nearestBase ? nearestBase.coords : NEW_DELHI.coords;
           spawnData = {
             id: `artillery-${Date.now()}`,
@@ -96,11 +136,10 @@ export default function MapClickHandler({ step, selectedSpawnType, onSpawn }) {
         }
 
         default: {
-          // Missile: always target New Delhi (hard-coded)
           spawnData = {
             id: `missile-${Date.now()}`,
             type: "missile",
-            baseId: "enemy-launch", // or fixedTarget.id
+            baseId: "enemy-launch",
             startLat: e.latlng.lat,
             startLng: e.latlng.lng,
             targetLat: NEW_DELHI.coords[0],
@@ -109,7 +148,7 @@ export default function MapClickHandler({ step, selectedSpawnType, onSpawn }) {
         }
       }
 
-      // Safety: ensure target/start exist
+      // Safety checks
       if (spawnData.startLat == null || spawnData.startLng == null) {
         console.error("Invalid spawn coordinates", spawnData);
         return;

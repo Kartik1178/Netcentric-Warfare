@@ -3,10 +3,10 @@ import { Group,Circle } from "react-konva";
 import FloatingMessage from "./FloatingMessage";
 
 export default function FloatingMessages({ messages }) {
-  console.log("FloatingMessages rendered, messages:", messages); // 🔥 log incoming messages
+
 
   if (!messages || messages.length === 0) {
-    console.log("No messages to display.");
+   
     return null;
   }
 

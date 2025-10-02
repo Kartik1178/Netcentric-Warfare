@@ -62,6 +62,13 @@ export default function FullMap({ step, onLogsUpdate, newJammer, mode }) {
 const [newDrone, setNewDrone] = useState(null);
 const [newArtillery, setNewArtillery] = useState(null);
 const [selectedSpawnType, setSelectedSpawnType] = useState("missile");
+const [customBases, setCustomBases] = useState([]);
+
+// ✅ Add new states
+const [showBasePopup, setShowBasePopup] = useState(false);
+const [newBaseType, setNewBaseType] = useState(null);
+const [placingNewBase, setPlacingNewBase] = useState(false);
+
 useEffect(() => {
   if (mode) {
     setSelectedSpawnType(mode);
@@ -139,6 +146,39 @@ const handleBaseClick = (base) => {
           🔴 Launch Mode: Click inside highlighted ENEMY ZONES to fire a missile
         </div>
       )}
+{/* ➕ Add Base Button */}
+<div className="absolute top-4 right-4 z-[1000]">
+  <button
+    onClick={() => setShowBasePopup(true)}
+    className="bg-blue-600 text-white px-4 py-2 rounded-lg shadow-lg hover:bg-blue-700"
+  >
+    ➕ Add Base
+  </button>
+</div>
+{/* Base Type Popup */}
+{showBasePopup && (
+  <div className="absolute inset-0 bg-black/50 flex items-center justify-center z-[2000]">
+    <div className="bg-white p-6 rounded-lg shadow-lg w-80">
+      <h2 className="text-lg font-bold mb-4">Select Base Type</h2>
+      <div className="flex flex-col gap-2">
+        {["Air", "Land", "Sea"].map((t) => (
+          <button
+            key={t}
+            onClick={() => {
+              setNewBaseType(t);
+              setShowBasePopup(false);
+              setPlacingNewBase(true);
+            }}
+            className="px-4 py-2 rounded bg-gray-200 hover:bg-gray-300"
+          >
+            {t} Base
+          </button>
+        ))}
+      </div>
+    </div>
+  </div>
+)}
+
 
       <MapContainer
         style={{ width: "100%", height: "100%" }}
@@ -157,8 +197,21 @@ const handleBaseClick = (base) => {
         <MapReadySetter onMapReady={setMapInstance} />
 <MapClickHandler
   step={step}
-  selectedSpawnType={selectedSpawnType} // You can add a state to select "missile", "drone", "artillery", "jammer"
+  selectedSpawnType={selectedSpawnType}
+  placingNewBase={placingNewBase}
+  setPlacingNewBase={setPlacingNewBase}       // ✅ tell MapClickHandler we're placing a base
+  newBaseType={newBaseType}             // ✅ which type
+  setCustomBases={setCustomBases}       // ✅ update custom bases
+  onLogsUpdate={onLogsUpdate}           // ✅ logging
   onSpawn={(spawnData) => {
+    // If it was a new base, MapClickHandler already handled it, just reset flags
+    if (placingNewBase) {
+      setPlacingNewBase(false);
+      setNewBaseType(null);
+      return;
+    }
+
+    // Otherwise normal spawn handling
     switch (spawnData.type) {
       case "missile":
         setNewMissile(spawnData);
@@ -185,16 +238,18 @@ const handleBaseClick = (base) => {
 />
 
 
+
         {/* 🟢 Base Markers */}
-        {mapInstance &&
-          BASES.map((base) => (
-            <Marker
-              key={base.id}
-              position={base.coords}
-              icon={getStyledBaseIcon(base, focusMode && selectedBaseId === base.id)}
-              eventHandlers={{ click: () => handleBaseClick(base) }}
-            />
-          ))}
+       {mapInstance &&
+  [...BASES, ...customBases].map((base) => (
+    <Marker
+      key={base.id}
+      position={base.coords}
+      icon={getStyledBaseIcon(base, focusMode && selectedBaseId === base.id)}
+      eventHandlers={{ click: () => handleBaseClick(base) }}
+    />
+  ))}
+
 
         {/* 🎨 Konva Canvas Overlay */}
         <TerritoryMap

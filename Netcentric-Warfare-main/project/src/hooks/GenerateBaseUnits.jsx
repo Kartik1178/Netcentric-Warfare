@@ -1,7 +1,7 @@
+// src/utils/generateBaseUnits.js
 import { BASES } from "../constants/baseData";
 
 let unitCounter = 0;
-
 const createUnit = (type, baseId, x, y, lat = null, lng = null) => ({
   id: `${type}-${unitCounter++}`,
   baseId,
@@ -12,13 +12,10 @@ const createUnit = (type, baseId, x, y, lat = null, lng = null) => ({
   lng,
 });
 
-/**
- * Generates units for a given sub-base.
- * Units are arranged in a circle to fully occupy the sub-base.
- */
 export function generateBaseUnits(baseId, type, subBaseRadius = 40) {
   const units = [];
 
+  // helper to arrange unit types in a circle
   const arrangeCircle = (unitTypes, radius, unitSize = 12) => {
     const count = unitTypes.length;
     const angleStep = (2 * Math.PI) / count;
