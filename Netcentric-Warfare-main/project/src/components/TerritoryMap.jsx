@@ -1,4 +1,3 @@
-// TerritoryMap.jsx
 import { useState, useEffect, useRef } from "react";
 import { Marker, Polygon } from "react-leaflet";
 import GridCanvas from "./MapSimulatuion/GridCanvas";
@@ -12,7 +11,6 @@ import { useLeafletToKonvaTransform } from "../hooks/useLeafletToKonvaTransform"
 import { useSmoothPositions } from "../hooks/useSmoothPositions";
 import { useSubBaseUnits } from "../hooks/useSubBaseUnits";
 import { getStyledBaseIcon } from "../utils/transparentIcon";
-import { normalizeLaunchToLatLng } from "../utils/coordinateUtils";
 
 const LAUNCH_ZONES = [
   { id: "pakistan-north", polygon: [[35,74.5],[34,74],[33.5,73.5],[33.5,74.5]], color: "rgba(255,0,0,0.3)" },
@@ -91,102 +89,103 @@ export default function TerritoryMap(props) {
     });
   }, [newMissile, newDrone, newArtillery]);
 
-  // --- Animate objects & interceptors with proper stop at target + slowdown near base ---
+  // Animate objects & interceptors
   useEffect(() => {
     const THRESHOLDS = { missile: 0.001, drone: 0.001, artillery: 0.001 };
-    const SLOW_RADIUS = 0.5; // ~5 km in lat/lng units
+    const SLOW_RADIUS = 0.5;
 
     const interval = setInterval(() => {
-      const handoffList = [];
-
       setGlobalObjects(prev => {
         const next = [];
+        const handoffList = [];
+
         for (const obj of prev) {
-          if (["missile","drone","artillery"].includes(obj.type) && !obj.exploded && !obj.reached) {
-            const dx = obj.targetLng - obj.lng;
-            const dy = obj.targetLat - obj.lat;
-            const dist = Math.sqrt(dx*dx + dy*dy);
-
-            // arrival check
-            if (dist < (THRESHOLDS[obj.type] || 0.001)) {
-              next.push(obj.type === "missile" ? { ...obj, reached: true, exploded: true } : { ...obj, reached: true, vx: 0, vy: 0 });
-              continue;
-            }
-
-            if (obj.type === "missile") {
-              let nearestBase = null, minD = Infinity;
-              for (const b of BASES) {
-                const dLat = b.coords[0] - obj.lat;
-                const dLng = b.coords[1] - obj.lng;
-                const d = Math.sqrt(dLat*dLat + dLng*dLng);
-                if (d < minD) { minD = d; nearestBase = b; }
-              }
-
-              // slow down when near base
-              let speedFactor = 1;
-              if (nearestBase && minD <= SLOW_RADIUS) {
-                speedFactor = minD / SLOW_RADIUS;
-              }
-
-              if (nearestBase && minD <= HANDOFF_DEG) {
-                handoffList.push({ obj, baseId: nearestBase.id });
-                continue;
-              }
-
-              const { vx, vy } = calculateVelocity(obj.lat, obj.lng, obj.targetLat, obj.targetLng, obj.speed * speedFactor);
-              next.push({ ...obj, lat: obj.lat + vy, lng: obj.lng + vx, vx, vy });
-              continue;
-            }
-
-            // normal movement
-            const { vx, vy } = calculateVelocity(obj.lat, obj.lng, obj.targetLat, obj.targetLng, obj.speed);
-            next.push({ ...obj, lat: obj.lat + vy, lng: obj.lng + vx, vx, vy });
-          } else {
+          if (!["missile", "drone", "artillery"].includes(obj.type) || obj.exploded || obj.reached) {
             next.push(obj);
+            continue;
           }
+
+          const dx = obj.targetLng - obj.lng;
+          const dy = obj.targetLat - obj.lat;
+          const dist = Math.sqrt(dx*dx + dy*dy);
+
+          if (dist < (THRESHOLDS[obj.type] || 0.001)) {
+            next.push(obj.type === "missile"
+              ? { ...obj, reached: true, exploded: true }
+              : { ...obj, reached: true, vx: 0, vy: 0 });
+            continue;
+          }
+
+          // Nearest base
+          let nearestBase = null;
+          let minD = Infinity;
+          for (const b of BASES) {
+            const dLat = b.coords[0] - obj.lat;
+            const dLng = b.coords[1] - obj.lng;
+            const d = Math.sqrt(dLat*dLat + dLng*dLng);
+            if (d < minD) { minD = d; nearestBase = b; }
+          }
+
+          // Handoff zone
+          if (nearestBase && minD <= HANDOFF_DEG && !obj.handedOff) {
+            handoffList.push({ obj, baseId: nearestBase.id });
+
+            if (obj.type === "drone") {
+              next.push({ ...obj, vx:0, vy:0, handedOff:true });
+            } else {
+              let speedFactor = minD <= SLOW_RADIUS ? minD/SLOW_RADIUS : 1;
+              const { vx, vy } = calculateVelocity(obj.lat, obj.lng, obj.targetLat, obj.targetLng, obj.speed*speedFactor);
+              next.push({ ...obj, lat: obj.lat+vy, lng: obj.lng+vx, vx, vy, handedOff:true });
+            }
+            continue;
+          }
+
+          const { vx, vy } = calculateVelocity(obj.lat, obj.lng, obj.targetLat, obj.targetLng, obj.speed);
+          next.push({ ...obj, lat: obj.lat+vy, lng: obj.lng+vx, vx, vy });
         }
+
+        // Handoff to localThreats
+        if (handoffList.length > 0 && mapInstance) {
+          setLocalThreats(prev => {
+            const nextLocal = { ...prev };
+            handoffList.forEach(({ obj, baseId }) => {
+              const pt = mapInstance.latLngToContainerPoint([obj.lat,obj.lng]);
+              const basePixel = smoothBasePositions[baseId];
+              if (!basePixel) return;
+              const relX = pt.x - basePixel.x;
+              const relY = pt.y - basePixel.y;
+              const speedPx = (VELOCITY_BY_TYPE[obj.type] || 0.02)*100;
+
+              nextLocal[baseId] = [
+                ...(nextLocal[baseId]||[]),
+                { id: obj.id, type: obj.type, x: relX, y: relY, targetX:0, targetY:0, speedPx }
+              ];
+            });
+            return nextLocal;
+          });
+        }
+
         return next;
       });
 
-      // handle handoff to localThreats
-      if (handoffList.length > 0 && mapInstance) {
-         console.log("[Handoff] Objects being handed off:", handoffList);
-        setLocalThreats(prev => {
-          const nextLocal = { ...prev };
-          handoffList.forEach(({ obj, baseId }) => {
-            const pt = mapInstance.latLngToContainerPoint([obj.lat, obj.lng]);
-            const basePixel = smoothBasePositions[baseId];
-            if (!basePixel) return;
-
-            const relX = pt.x - basePixel.x;
-            const relY = pt.y - basePixel.y;
-
-            const local = { id: obj.id, type: "missile", x: relX, y: relY, targetX: 0, targetY: 0, speedPx: 6 };
-              console.log(`[Handoff] Local threat created`, local);
-            nextLocal[baseId] = [...(nextLocal[baseId] || []), local];
-          });
-          return nextLocal;
-        });
-      }
-
-      // interceptor animation
+      // Animate interceptors
       setActiveInterceptors(prev => prev.map(intc => {
         if (intc.exploded || intc.reached) return intc;
         const targetObj = globalObjectsRef.current.find(o => o.id === intc.targetId && !o.exploded);
-        if (!targetObj) return { ...intc, exploded: true };
-        const { vx, vy } = calculateVelocity(intc.lat, intc.lng, targetObj.lat, targetObj.lng, intc.speed);
+        if (!targetObj) return { ...intc, exploded:true };
+        const { vx, vy } = calculateVelocity(intc.lat,intc.lng,targetObj.lat,targetObj.lng,intc.speed);
         const dx = targetObj.lng - intc.lng;
         const dy = targetObj.lat - intc.lat;
         const dist = Math.sqrt(dx*dx + dy*dy);
         if (dist < 0.05) {
           if (mapInstance) {
-            const point = mapInstance.latLngToContainerPoint([targetObj.lat, targetObj.lng]);
-            setExplosions(prev => [...prev, { x: point.x, y: point.y }]);
+            const point = mapInstance.latLngToContainerPoint([targetObj.lat,targetObj.lng]);
+            setExplosions(prev => [...prev,{x:point.x,y:point.y}]);
           }
-          setGlobalObjects(prev => prev.map(o => o.id === targetObj.id ? { ...o, exploded: true } : o));
-          return { ...intc, exploded: true };
+          setGlobalObjects(prev => prev.map(o => o.id===targetObj.id ? {...o, exploded:true} : o));
+          return { ...intc, exploded:true };
         }
-        return { ...intc, vx, vy, lat: intc.lat + vy, lng: intc.lng + vx };
+        return { ...intc, vx, vy, lat:intc.lat+vy, lng:intc.lng+vx };
       }));
 
     }, 30);
@@ -198,13 +197,29 @@ export default function TerritoryMap(props) {
   const baseUnitsToScale = globalObjects.filter(o => !["missile","drone","artillery","interceptor"].includes(o.type));
   const scaledBaseUnits = useSubBaseUnits(baseUnitsToScale, konvaZoom);
 
-  const projectObjects = globalObjects
-    .filter(o => ["missile","drone","artillery"].includes(o.type) && !o.exploded)
-    .map(obj => {
-      if (!mapInstance) return null;
-      const point = mapInstance.latLngToContainerPoint([obj.lat,obj.lng]);
-      return { ...obj, x: point?.x || 0, y: point?.y || 0 };
-    }).filter(Boolean);
+ const projectObjects = globalObjects
+  .filter(o => ["missile","drone","artillery"].includes(o.type) && !o.exploded)
+  .map(obj => {
+    if (!mapInstance) return null;
+
+    const point = mapInstance.latLngToContainerPoint([obj.lat, obj.lng]);
+
+    // Ensure Central AI fields are present
+    return { 
+      ...obj,
+      x: point?.x || 0,
+      y: point?.y || 0,
+      currentX: point?.x || 0,
+      currentY: point?.y || 0,
+      currentLat: obj.lat,
+      currentLng: obj.lng,
+      vx: obj.vx ?? 0,
+      vy: obj.vy ?? 0,
+      category: obj.category ?? obj.type // so drones have category "drone"
+    };
+  })
+  .filter(Boolean);
+
 
   const interceptorsInPixels = activeInterceptors
     .filter(o => !o.exploded)
@@ -215,6 +230,7 @@ export default function TerritoryMap(props) {
     }).filter(Boolean);
 
   const allUnitsForCanvas = [...scaledBaseUnits, ...projectObjects, ...interceptorsInPixels];
+
 
   useCentralAI(allUnitsForCanvas, ()=>{}, signal=>socket.emit("unit-signal", signal), showMessageRef.current);
 
@@ -311,4 +327,4 @@ onLaunchInterceptor={launchData => {
       </div>
     </>
   );
-}
+} 

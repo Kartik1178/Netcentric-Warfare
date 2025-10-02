@@ -33,18 +33,12 @@ export default function Antenna({
   const isJammedRef = useRef(false);
   const jammedUntil = useRef(0);
 
-  // Ensure the map has a record for this base
   if (!baseRelayedMissilesMap.has(baseId)) baseRelayedMissilesMap.set(baseId, new Set());
-
-  // Keep jammed state synced
   useEffect(() => { isJammedRef.current = isJammed; }, [isJammed]);
 
-  // Manage frequency agility
   useCognitiveRadio({ id, jammerReports, availableFrequencies, currentFrequency, setCurrentFrequency });
-
   const previousJammedState = useRef(null);
 
-  // Detect jammers
   useJammerDetection({
     id, x, y,
     myFrequency: currentFrequency,
@@ -57,77 +51,66 @@ export default function Antenna({
     },
   });
 
-  // Handle radar relay signals
-  useEffect(() => {
-    const handleRadarSignal = (data) => {
-      const { type, payload } = data;
-      if (type === "relay-to-antenna" && payload?.baseId === baseId) {
-        const baseRelayedSet = baseRelayedMissilesMap.get(baseId);
-        if (baseRelayedSet.has(payload.missileId)) return;
-        baseRelayedSet.add(payload.missileId);
+useEffect(() => {
+  const handleRadarSignal = (data) => {
+    const { type, payload } = data;
+    if (type === "relay-to-antenna" && payload?.baseId === baseId) {
+      const baseRelayedSet = baseRelayedMissilesMap.get(baseId);
 
-        // Pick an antenna to visually animate
-        if (!activeVisualAntennaId) {
-          activeVisualAntennaId = id;
-          clearTimeout(activeVisualTimeout);
-          activeVisualTimeout = setTimeout(() => {
-            activeVisualAntennaId = null;
-          }, 1500);
-        }
+      // Use payload.objectId instead of missileId
+      const objectId = payload.objectId;
+      if (!objectId || baseRelayedSet.has(objectId)) return;
 
-        // Animate incoming pulse
+      baseRelayedSet.add(objectId);
+
+      if (!activeVisualAntennaId) {
+        activeVisualAntennaId = id;
+        clearTimeout(activeVisualTimeout);
+        activeVisualTimeout = setTimeout(() => { activeVisualAntennaId = null; }, 1500);
+      }
+
+      if (activeVisualAntennaId === id) {
+        setSignalAnimations((prev) => [...prev, { type: "receive", color: "lime", progress: 0 }]);
+      }
+
+      setTimeout(() => {
+        if (isJammedRef.current) return;
+
+        const signalData = {
+          from: { x, y },
+          to: CENTRAL_AI_POSITION,
+          color: "red",
+          source: "antenna",
+          type: "relay-to-c2",
+          payload,
+        };
+
+        emitSignal?.(signalData);
+        socket.emit("unit-signal", signalData);
+
         if (activeVisualAntennaId === id) {
           setSignalAnimations((prev) => [
             ...prev,
-            { type: "receive", color: "lime", progress: 0 }
+            { type: "send", color: "red", progress: 0, target: CENTRAL_AI_POSITION }
           ]);
         }
 
-        setTimeout(() => {
-          if (isJammedRef.current) return;
+        onLogsUpdate?.({
+          timestamp: new Date().toLocaleTimeString(),
+          source: `Antenna ${id.slice(-4)}`,
+          type: "relay-to-c2",
+          message: `Relayed ${payload.type} ${objectId.slice(-4)} to C2 AI.`,
+          payload,
+        });
+      }, 1000);
+    }
+  };
 
-          // Send to Central AI
-          const signalData = {
-            from: { x, y },
-            to: CENTRAL_AI_POSITION,
-            color: "red",
-            source: "antenna",
-            type: "relay-to-c2",
-            payload,
-          };
+  socket.on("unit-signal", handleRadarSignal);
+  return () => socket.off("unit-signal", handleRadarSignal);
+}, [id, x, y, baseId, emitSignal, onLogsUpdate]);
 
-          emitSignal?.(signalData);
-          socket.emit("unit-signal", signalData);
 
-          // Animate send line
-          if (activeVisualAntennaId === id) {
-            setSignalAnimations((prev) => [
-              ...prev,
-              {
-                type: "send",
-                color: "red",
-                progress: 0,
-                target: CENTRAL_AI_POSITION
-              }
-            ]);
-          }
-
-          onLogsUpdate?.({
-            timestamp: new Date().toLocaleTimeString(),
-            source: `Antenna ${id.slice(-4)}`,
-            type: "relay-to-c2",
-            message: `Relayed missile ${payload.missileId.slice(-4)} to C2 AI.`,
-            payload,
-          });
-        }, 1000);
-      }
-    };
-
-    socket.on("unit-signal", handleRadarSignal);
-    return () => socket.off("unit-signal", handleRadarSignal);
-  }, [id, x, y, baseId, emitSignal, onLogsUpdate]);
-
-  // Animate signal progress
   useEffect(() => {
     if (!signalAnimations.length) return;
     const animId = requestAnimationFrame(() => {
@@ -146,15 +129,12 @@ export default function Antenna({
 
   return (
     <Group x={x} y={y}>
-      {/* Base antenna circle */}
       <Circle
         radius={radius}
         fill={isJammed ? "gray" : "green"}
         shadowBlur={6}
         shadowColor={isJammed ? "darkgray" : "lime"}
       />
-
-      {/* Antenna image */}
       {image && (
         <Image
           image={image}
@@ -169,8 +149,6 @@ export default function Antenna({
           }}
         />
       )}
-
-      {/* Frequency label */}
       <Text
         text={frequencyDisplayText}
         x={-radius}
@@ -180,12 +158,9 @@ export default function Antenna({
         align="center"
         width={radius * 2}
       />
-
-      {/* Signal animations */}
       {activeVisualAntennaId === id &&
         signalAnimations.map((sig, idx) => {
           if (sig.type === "receive") {
-            // Incoming ripple
             const r = radius + sig.progress * 25;
             return (
               <Circle
@@ -199,7 +174,6 @@ export default function Antenna({
               />
             );
           } else if (sig.type === "send" && sig.target) {
-            // Outgoing beam to central AI
             const tx = sig.target.x - x;
             const ty = sig.target.y - y;
             return (

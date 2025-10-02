@@ -18,7 +18,7 @@ export function useCentralAI(units, onDecision, emitSignal, showMessageCallback)
       if (signal.type !== "relay-to-c2" || signal.source !== "antenna") return;
 
       const missile = signal.payload;
-      const missileId = missile.missileId ?? missile.id;
+      const missileId = missile.missileId ?? missile.id ?? missile.objectId;
       if (!missileId) return console.error("[CentralAI] Missing missileId");
 
       // Cooldown check
