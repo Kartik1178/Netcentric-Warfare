@@ -43,7 +43,10 @@ export function useLeafletToKonvaTransform({ mapInstance, baseData = [], mapSize
     const anyNonZero = Object.values(updatedPixels).some((p) => p.x > 0 && p.y > 0);
     if (!anyNonZero) return;
 
-    setPixelPositions(updatedPixels);
+    if (JSON.stringify(updatedPixels) !== JSON.stringify(pixelPositions)) {
+  setPixelPositions(updatedPixels);
+}
+
     setZoom(mapInstance.getZoom());
 
     if (allValid && retryTimer.current) {

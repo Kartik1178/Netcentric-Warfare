@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useRef,useMemo } from "react";
 import { Marker, Polygon } from "react-leaflet";
 import GridCanvas from "./MapSimulatuion/GridCanvas";
 import { useSDR } from "../hooks/SDRContext";
@@ -23,7 +23,7 @@ const LAUNCH_ZONES = [
 function calculateVelocity(startLat, startLng, targetLat, targetLng, speed = 0.05) {
   const dx = targetLng - startLng;
   const dy = targetLat - startLat;
-  const dist = Math.sqrt(dx * dx + dy * dy) || 0.001; // prevent divide by 0
+  const dist = Math.sqrt(dx * dx + dy * dy) || 0.001;
   return { vx: (dx / dist) * speed, vy: (dy / dist) * speed };
 }
 
@@ -31,7 +31,7 @@ export default function TerritoryMap(props) {
   const {
     onLogsUpdate, newMissile, newDrone, newArtillery,
     zoom, center, mapInstance, mapSize,
-    focusMode, setFocusMode, selectedBaseId, setSelectedBaseId
+    focusMode, setFocusMode, selectedBaseId, setSelectedBaseId, customBases
   } = props;
 
   const { jammerReports, setJammerReports, currentFrequency, setCurrentFrequency, availableFrequencies } = useSDR();
@@ -46,33 +46,52 @@ export default function TerritoryMap(props) {
   const globalObjectsRef = useRef(globalObjects);
   useEffect(() => { globalObjectsRef.current = globalObjects; }, [globalObjects]);
 
-  const { pixelPositions, zoom: konvaZoom } = useLeafletToKonvaTransform({ mapInstance, baseData: BASES, mapSize });
+  // 🔹 Merge hardcoded + custom into one master list
+const ALL_BASES = useMemo(() => [...BASES, ...customBases], [customBases]);
+
+
+  const { pixelPositions, zoom: konvaZoom } = useLeafletToKonvaTransform({ mapInstance, baseData: ALL_BASES, mapSize });
   const smoothBasePositions = useSmoothPositions(pixelPositions, 300);
   const [localThreats, setLocalThreats] = useState({});
-  const HANDOFF_DEG = 0.02; // ~2 km
+  const HANDOFF_DEG = 0.02;
 
-  // Generate base units
-  useEffect(() => {
-    if (!pixelPositions || Object.keys(pixelPositions).length === 0) return;
-    const generateUnitsForBase = (baseId) => {
-      const baseData = BASES.find(b => b.id === baseId);
-      if (!baseData) return [];
-      const dynamicRadius = konvaZoom >= 15 ? 80 : konvaZoom >= 13 ? 70 : 60;
-      return Array.from({ length: 4 }).flatMap((_, i) => {
-        const subBaseId = `${baseId}-sub${i + 1}`;
-        return generateBaseUnits(subBaseId, baseData.type, dynamicRadius).map(u => ({ ...u, localX: u.x, localY: u.y }));
-      });
-    };
-    const allUnits = focusMode && selectedBaseId ? generateUnitsForBase(selectedBaseId) : BASES.flatMap(b => generateUnitsForBase(b.id));
-    setGlobalObjects(prev => [
-      ...prev.filter(o => ["missile","drone","artillery","interceptor"].includes(o.type)),
-      ...allUnits
-    ]);
-  }, [pixelPositions, konvaZoom, focusMode, selectedBaseId]);
+  // 🔹 Generate units for ALL bases
+useEffect(() => {
+  if (!pixelPositions || Object.keys(pixelPositions).length === 0) return;
+
+  const generateUnitsForBase = (base) => {
+    const dynamicRadius = konvaZoom >= 15 ? 80 : konvaZoom >= 13 ? 70 : 60;
+    return [1, 2, 3, 4].flatMap(i => {
+      const subBaseId = `${base.id}-sub${i}`;
+      return generateBaseUnits(subBaseId, base.type, dynamicRadius, customBases).map(u => ({
+        ...u, localX: u.x, localY: u.y
+      }));
+    });
+  };
+
+  const selectedBases = focusMode && selectedBaseId
+    ? ALL_BASES.filter(b => b.id === selectedBaseId)
+    : ALL_BASES;
+
+  const allUnits = selectedBases.flatMap(generateUnitsForBase);
+
+  setGlobalObjects(prev => {
+    const staticObjs = prev.filter(o =>
+      ["missile", "drone", "artillery", "interceptor"].includes(o.type)
+    );
+
+    const next = [...staticObjs, ...allUnits];
+
+    // avoid state update if nothing changed
+    if (JSON.stringify(next) === JSON.stringify(prev)) return prev;
+    return next;
+  });
+}, [pixelPositions, konvaZoom, focusMode, selectedBaseId, customBases, ALL_BASES]);
+
 
   const VELOCITY_BY_TYPE = { missile: 0.05, drone: 0.02, artillery: 0.015 };
 
-  // Spawn new objects
+  // 🔹 Spawn new threats
   useEffect(() => {
     const newObjs = [newMissile, newDrone, newArtillery].filter(Boolean);
     newObjs.forEach(objData => {
@@ -89,138 +108,119 @@ export default function TerritoryMap(props) {
     });
   }, [newMissile, newDrone, newArtillery]);
 
-  // Animate objects & interceptors
-  // Animate objects & interceptors
-useEffect(() => {
-  const THRESHOLDS = { missile: 0.001, drone: 0.001, artillery: 0.001 };
-  const SLOW_RADIUS = 0.5; // degrees (~2 km)
+  // 🔹 Animate threats + interceptors
+  useEffect(() => {
+    const THRESHOLDS = { missile: 0.001, drone: 0.001, artillery: 0.001 };
+    const SLOW_RADIUS = 0.5;
 
-  const interval = setInterval(() => {
-    setGlobalObjects(prev => {
-      const next = [];
-      const handoffList = [];
+    const interval = setInterval(() => {
+      setGlobalObjects(prev => {
+        const next = [];
+        const handoffList = [];
 
-      for (const obj of prev) {
-        if (!["missile", "drone", "artillery"].includes(obj.type) || obj.exploded || obj.reached) {
-          next.push(obj);
-          continue;
+        for (const obj of prev) {
+          if (!["missile", "drone", "artillery"].includes(obj.type) || obj.exploded || obj.reached) {
+            next.push(obj);
+            continue;
+          }
+
+          const dx = obj.targetLng - obj.lng;
+          const dy = obj.targetLat - obj.lat;
+          const dist = Math.sqrt(dx * dx + dy * dy);
+
+          if (dist < (THRESHOLDS[obj.type] || 0.001)) {
+            next.push(obj.type === "missile"
+              ? { ...obj, reached: true, exploded: true }
+              : { ...obj, reached: true, vx: 0, vy: 0 });
+            continue;
+          }
+
+          // 🔹 nearest base uses ALL_BASES
+          let nearestBase = null;
+          let minD = Infinity;
+          for (const b of ALL_BASES) {
+            const dLat = b.coords[0] - obj.lat;
+            const dLng = b.coords[1] - obj.lng;
+            const d = Math.sqrt(dLat * dLat + dLng * dLng);
+            if (d < minD) { minD = d; nearestBase = b; }
+          }
+
+          let speedFactor = 1;
+          if (nearestBase && minD <= SLOW_RADIUS) {
+            speedFactor = minD / SLOW_RADIUS;
+          }
+
+          if (nearestBase && minD <= HANDOFF_DEG && !obj.handedOff) {
+            handoffList.push({ obj, baseId: nearestBase.id });
+            next.push({ ...obj, vx: 0, vy: 0, handedOff: true });
+            continue;
+          }
+
+          const { vx, vy } = calculateVelocity(obj.lat, obj.lng, obj.targetLat, obj.targetLng, obj.speed * speedFactor);
+          next.push({ ...obj, lat: obj.lat + vy, lng: obj.lng + vx, vx, vy });
         }
 
-        const dx = obj.targetLng - obj.lng;
-        const dy = obj.targetLat - obj.lat;
-        const dist = Math.sqrt(dx * dx + dy * dy);
+        if (handoffList.length > 0 && mapInstance) {
+          setLocalThreats(prev => {
+            const nextLocal = { ...prev };
+            handoffList.forEach(({ obj, baseId }) => {
+              const pt = mapInstance.latLngToContainerPoint([obj.lat,obj.lng]);
+              const basePixel = smoothBasePositions[baseId];
+              if (!basePixel) return;
+              const relX = pt.x - basePixel.x;
+              const relY = pt.y - basePixel.y;
+              const speedPx = (VELOCITY_BY_TYPE[obj.type] || 0.02) * 100;
 
-        if (dist < (THRESHOLDS[obj.type] || 0.001)) {
-          next.push(obj.type === "missile"
-            ? { ...obj, reached: true, exploded: true }
-            : { ...obj, reached: true, vx: 0, vy: 0 });
-          continue;
-        }
-
-        // Find nearest base
-        let nearestBase = null;
-        let minD = Infinity;
-        for (const b of BASES) {
-          const dLat = b.coords[0] - obj.lat;
-          const dLng = b.coords[1] - obj.lng;
-          const d = Math.sqrt(dLat * dLat + dLng * dLng);
-          if (d < minD) { minD = d; nearestBase = b; }
-        }
-
-        // Apply slow-down factor when near base
-        let speedFactor = 1;
-        if (nearestBase && minD <= SLOW_RADIUS) {
-          speedFactor = minD / SLOW_RADIUS; // slower when closer
-        }
-
-        // Handle handoff for localThreats
-        if (nearestBase && minD <= HANDOFF_DEG && !obj.handedOff) {
-          handoffList.push({ obj, baseId: nearestBase.id });
-          next.push({ ...obj, vx: 0, vy: 0, handedOff: true }); // pause in handoff zone
-          continue;
-        }
-
-        const { vx, vy } = calculateVelocity(obj.lat, obj.lng, obj.targetLat, obj.targetLng, obj.speed * speedFactor);
-        next.push({ ...obj, lat: obj.lat + vy, lng: obj.lng + vx, vx, vy });
-      }
-
-      // Handoff to localThreats
-      if (handoffList.length > 0 && mapInstance) {
-        setLocalThreats(prev => {
-          const nextLocal = { ...prev };
-          handoffList.forEach(({ obj, baseId }) => {
-            const pt = mapInstance.latLngToContainerPoint([obj.lat,obj.lng]);
-            const basePixel = smoothBasePositions[baseId];
-            if (!basePixel) return;
-            const relX = pt.x - basePixel.x;
-            const relY = pt.y - basePixel.y;
-            const speedPx = (VELOCITY_BY_TYPE[obj.type] || 0.02) * 100;
-
-            nextLocal[baseId] = [
-              ...(nextLocal[baseId] || []),
-              { id: obj.id, type: obj.type, x: relX, y: relY, targetX: 0, targetY: 0, speedPx }
-            ];
+              nextLocal[baseId] = [
+                ...(nextLocal[baseId] || []),
+                { id: obj.id, type: obj.type, x: relX, y: relY, targetX: 0, targetY: 0, speedPx }
+              ];
+            });
+            return nextLocal;
           });
-          return nextLocal;
-        });
-      }
-
-      return next;
-    });
-
-    // Animate interceptors (unchanged)
-    setActiveInterceptors(prev => prev.map(intc => {
-      if (intc.exploded || intc.reached) return intc;
-      const targetObj = globalObjectsRef.current.find(o => o.id === intc.targetId && !o.exploded);
-      if (!targetObj) return { ...intc, exploded: true };
-      const { vx, vy } = calculateVelocity(intc.lat, intc.lng, targetObj.lat, targetObj.lng, intc.speed);
-      const dx = targetObj.lng - intc.lng;
-      const dy = targetObj.lat - intc.lat;
-      const dist = Math.sqrt(dx * dx + dy * dy);
-      if (dist < 0.05) {
-        if (mapInstance) {
-          const point = mapInstance.latLngToContainerPoint([targetObj.lat,targetObj.lng]);
-          setExplosions(prev => [...prev,{x:point.x,y:point.y}]);
         }
-        setGlobalObjects(prev => prev.map(o => o.id === targetObj.id ? { ...o, exploded: true } : o));
-        return { ...intc, exploded: true };
-      }
-      return { ...intc, vx, vy, lat: intc.lat + vy, lng: intc.lng + vx };
-    }));
 
-  }, 30);
+        return next;
+      });
 
-  return () => clearInterval(interval);
-}, [mapInstance, smoothBasePositions]);
+      // 🔹 Animate interceptors
+      setActiveInterceptors(prev => prev.map(intc => {
+        if (intc.exploded || intc.reached) return intc;
+        const targetObj = globalObjectsRef.current.find(o => o.id === intc.targetId && !o.exploded);
+        if (!targetObj) return { ...intc, exploded: true };
+        const { vx, vy } = calculateVelocity(intc.lat, intc.lng, targetObj.lat, targetObj.lng, intc.speed);
+        const dx = targetObj.lng - intc.lng;
+        const dy = targetObj.lat - intc.lat;
+        const dist = Math.sqrt(dx * dx + dy * dy);
+        if (dist < 0.05) {
+          if (mapInstance) {
+            const point = mapInstance.latLngToContainerPoint([targetObj.lat,targetObj.lng]);
+            setExplosions(prev => [...prev,{x:point.x,y:point.y}]);
+          }
+          setGlobalObjects(prev => prev.map(o => o.id === targetObj.id ? { ...o, exploded: true } : o));
+          return { ...intc, exploded: true };
+        }
+        return { ...intc, vx, vy, lat: intc.lat + vy, lng: intc.lng + vx };
+      }));
 
+    }, 30);
 
-  // --- project to canvas ---
+    return () => clearInterval(interval);
+  }, [mapInstance, smoothBasePositions, ALL_BASES]);
+
+  // 🔹 Project to canvas
   const baseUnitsToScale = globalObjects.filter(o => !["missile","drone","artillery","interceptor"].includes(o.type));
   const scaledBaseUnits = useSubBaseUnits(baseUnitsToScale, konvaZoom);
 
- const projectObjects = globalObjects
-  .filter(o => ["missile","drone","artillery"].includes(o.type) && !o.exploded)
-  .map(obj => {
-    if (!mapInstance) return null;
-
-    const point = mapInstance.latLngToContainerPoint([obj.lat, obj.lng]);
-
-    // Ensure Central AI fields are present
-    return { 
-      ...obj,
-      x: point?.x || 0,
-      y: point?.y || 0,
-      currentX: point?.x || 0,
-      currentY: point?.y || 0,
-      currentLat: obj.lat,
-      currentLng: obj.lng,
-      vx: obj.vx ?? 0,
-      vy: obj.vy ?? 0,
-      category: obj.category ?? obj.type // so drones have category "drone"
-    };
-  })
-  .filter(Boolean);
-
+  const projectObjects = globalObjects
+    .filter(o => ["missile","drone","artillery"].includes(o.type) && !o.exploded)
+    .map(obj => {
+      if (!mapInstance) return null;
+      const point = mapInstance.latLngToContainerPoint([obj.lat, obj.lng]);
+      return { ...obj, x: point?.x || 0, y: point?.y || 0, currentX: point?.x || 0, currentY: point?.y || 0,
+        currentLat: obj.lat, currentLng: obj.lng, vx: obj.vx ?? 0, vy: obj.vy ?? 0, category: obj.category ?? obj.type };
+    })
+    .filter(Boolean);
 
   const interceptorsInPixels = activeInterceptors
     .filter(o => !o.exploded)
@@ -232,12 +232,11 @@ useEffect(() => {
 
   const allUnitsForCanvas = [...scaledBaseUnits, ...projectObjects, ...interceptorsInPixels];
 
-
   useCentralAI(allUnitsForCanvas, ()=>{}, signal=>socket.emit("unit-signal", signal), showMessageRef.current);
 
   return (
     <>
-      {mapInstance && BASES.map(base => (
+      {mapInstance && ALL_BASES.map(base => (
         <Marker
           key={base.id}
           position={base.coords}
@@ -258,7 +257,7 @@ useEffect(() => {
             explosions={explosions}
             setExplosions={setExplosions}
             objects={allUnitsForCanvas}
-            localThreats={localThreats}  
+            localThreats={localThreats}
             removeLocalThreat={(baseId, id) => {
               setLocalThreats(prev => {
                 const copy = { ...prev };
@@ -276,51 +275,28 @@ useEffect(() => {
             zoom={konvaZoom}
             selectedBaseId={selectedBaseId}
             floatingMessages={floatingMessages}
-onLaunchInterceptor={launchData => {
-  if (!launchData) return;
+            onLaunchInterceptor={launchData => {
+              if (!launchData) return;
+              const { launcherId, threatId } = launchData;
+              const launcher = globalObjects.find(o => o.id === launcherId);
+              if (!launcher) return console.error("Launcher not found:", launcherId);
+              const target = globalObjects.find(o => o.id === threatId && !o.exploded);
+              if (!target) return console.error("Target not found:", threatId);
 
-  const { launcherId, threatId } = launchData;
-
-  // Find launcher in globalObjects
-  const launcher = globalObjects.find(o => o.id === launcherId);
-  if (!launcher) {
-    console.error("[Interceptor Launch] Launcher not found:", launcherId);
-    return;
-  }
-
-  // Find target missile/drone/artillery in globalObjects
-  const target = globalObjects.find(o => o.id === threatId && !o.exploded);
-  if (!target) {
-    console.error("[Interceptor Launch] Target not found or already exploded:", threatId);
-    return;
-  }
-
-  const launcherLat = launcher.lat;
-  const launcherLng = launcher.lng;
-  const targetLat = target.lat;
-  const targetLng = target.lng;
-
-  console.log("[Interceptor Launch] From launcherLat/lng:", launcherLat, launcherLng, 
-              "To targetLat/lng:", targetLat, targetLng);
-
-  const { vx, vy } = calculateVelocity(launcherLat, launcherLng, targetLat, targetLng, 0.08);
-
-  setActiveInterceptors(prev => [...prev, {
-    id: `interceptor-${Date.now()}`,
-    threatId,
-    type: "interceptor",
-    lat: launcherLat,
-    lng: launcherLng,
-    targetId: threatId,
-    speed: 0.05,
-    vx, vy,
-    exploded: false,
-    reached: false
-  }]);
-}}
-
-
-
+              const { vx, vy } = calculateVelocity(launcher.lat, launcher.lng, target.lat, target.lng, 0.08);
+              setActiveInterceptors(prev => [...prev, {
+                id: `interceptor-${Date.now()}`,
+                threatId,
+                type: "interceptor",
+                lat: launcher.lat,
+                lng: launcher.lng,
+                targetId: threatId,
+                speed: 0.05,
+                vx, vy,
+                exploded: false,
+                reached: false
+              }]);
+            }}
             onLogsUpdate={onLogsUpdate}
             mapInstance={mapInstance}
           />
@@ -328,4 +304,4 @@ onLaunchInterceptor={launchData => {
       </div>
     </>
   );
-} 
+}

@@ -266,6 +266,7 @@ const handleBaseClick = (base) => {
           newDrone={newDrone}         // ✅ Drone state
   newArtillery={newArtillery}
           newJammer={newJammer}
+           customBases={customBases}
         />
       </MapContainer>
     </div>

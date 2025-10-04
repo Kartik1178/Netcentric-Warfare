@@ -12,8 +12,18 @@ const createUnit = (type, baseId, x, y, lat = null, lng = null) => ({
   lng,
 });
 
-export function generateBaseUnits(baseId, type, subBaseRadius = 40) {
+export function generateBaseUnits(baseId, type, subBaseRadius = 40, customBases = []) {
   const units = [];
+
+// src/utils/generateBaseUnits.js
+const base =
+  BASES.find((b) => baseId.startsWith(b.id)) ||
+  customBases.find((b) => b.id === baseId);   // 🔹 exact match for custom
+
+
+const baseLat = base?.coords?.[0] || 0;
+const baseLng = base?.coords?.[1] || 0;
+
 
   // helper to arrange unit types in a circle
   const arrangeCircle = (unitTypes, radius, unitSize = 12) => {
@@ -27,11 +37,6 @@ export function generateBaseUnits(baseId, type, subBaseRadius = 40) {
       return createUnit(unitType, baseId, x, y, baseLat, baseLng);
     });
   };
-
-  const mainBaseId = baseId.replace(/-sub\d/, "");
-  const base = BASES.find((b) => b.id === mainBaseId);
-  const baseLat = base?.coords?.[0] || 0;
-  const baseLng = base?.coords?.[1] || 0;
 
   switch (type) {
     case "Air":
