@@ -221,7 +221,7 @@ export const ThreatDashboard = ({ onThreatSelect }) => {
 
       {/* Sections */}
       <div className="flex-1 overflow-y-auto p-4 space-y-3">
-        {renderSection('Defensive Jammers', jammers, '📡', 'from-green-500 to-emerald-600', 'jammer', loadingJammers)}
+      
         {renderSection('Drones', drones, '🛸', 'from-lime-500 to-green-600', 'drones', loadingDrones)}
         {renderSection('Artillery', artillery, '💣', 'from-red-500 to-orange-600', 'artillery', loadingArtillery)}
 

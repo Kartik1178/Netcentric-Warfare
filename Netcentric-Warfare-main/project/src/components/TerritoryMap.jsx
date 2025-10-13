@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef,useMemo } from "react";
+import { useState, useEffect, useRef, useMemo, useCallback } from "react";
 import { Marker, Polygon } from "react-leaflet";
 import GridCanvas from "./MapSimulatuion/GridCanvas";
 import { useSDR } from "../hooks/SDRContext";
@@ -11,6 +11,8 @@ import { useLeafletToKonvaTransform } from "../hooks/useLeafletToKonvaTransform"
 import { useSmoothPositions } from "../hooks/useSmoothPositions";
 import { useSubBaseUnits } from "../hooks/useSubBaseUnits";
 import { getStyledBaseIcon } from "../utils/transparentIcon";
+import useDefenseSystemManager from "../hooks/DefenseSystemManager";
+import { useIndependentDefense } from "../hooks/useIndependentDefense";
 
 const LAUNCH_ZONES = [
   { id: "pakistan-north", polygon: [[35,74.5],[34,74],[33.5,73.5],[33.5,74.5]], color: "rgba(255,0,0,0.3)" },
@@ -25,6 +27,22 @@ function calculateVelocity(startLat, startLng, targetLat, targetLng, speed = 0.0
   const dy = targetLat - startLat;
   const dist = Math.sqrt(dx * dx + dy * dy) || 0.001;
   return { vx: (dx / dist) * speed, vy: (dy / dist) * speed };
+}
+
+// 🔹 Helper component that legally runs the hook
+function BackgroundDefenseEngine({ objects, zoom, onLogsUpdate, showMessage, baseId, active, spawnInterceptor }) {
+
+  useDefenseSystemManager({
+    objects,
+    zoom,
+    onLogsUpdate,
+    emitSignal: (signal) => socket.emit("unit-signal", signal),
+    showMessage,
+    baseId,
+    active,
+    spawnInterceptor,
+  });
+  return null;
 }
 
 export default function TerritoryMap(props) {
@@ -47,8 +65,7 @@ export default function TerritoryMap(props) {
   useEffect(() => { globalObjectsRef.current = globalObjects; }, [globalObjects]);
 
   // 🔹 Merge hardcoded + custom into one master list
-const ALL_BASES = useMemo(() => [...BASES, ...customBases], [customBases]);
-
+  const ALL_BASES = useMemo(() => [...BASES, ...customBases], [customBases]);
 
   const { pixelPositions, zoom: konvaZoom } = useLeafletToKonvaTransform({ mapInstance, baseData: ALL_BASES, mapSize });
   const smoothBasePositions = useSmoothPositions(pixelPositions, 300);
@@ -56,38 +73,36 @@ const ALL_BASES = useMemo(() => [...BASES, ...customBases], [customBases]);
   const HANDOFF_DEG = 0.02;
 
   // 🔹 Generate units for ALL bases
-useEffect(() => {
-  if (!pixelPositions || Object.keys(pixelPositions).length === 0) return;
+  useEffect(() => {
+    if (!pixelPositions || Object.keys(pixelPositions).length === 0) return;
 
-  const generateUnitsForBase = (base) => {
-    const dynamicRadius = konvaZoom >= 15 ? 80 : konvaZoom >= 13 ? 70 : 60;
-    return [1, 2, 3, 4].flatMap(i => {
-      const subBaseId = `${base.id}-sub${i}`;
-      return generateBaseUnits(subBaseId, base.type, dynamicRadius, customBases).map(u => ({
-        ...u, localX: u.x, localY: u.y
-      }));
+    const generateUnitsForBase = (base) => {
+      const dynamicRadius = konvaZoom >= 15 ? 80 : konvaZoom >= 13 ? 70 : 60;
+      return [1, 2, 3, 4].flatMap(i => {
+        const subBaseId = `${base.id}-sub${i}`;
+        return generateBaseUnits(subBaseId, base.type, dynamicRadius, customBases).map(u => ({
+          ...u, localX: u.x, localY: u.y
+        }));
+      });
+    };
+
+    const selectedBases = focusMode && selectedBaseId
+      ? ALL_BASES.filter(b => b.id === selectedBaseId)
+      : ALL_BASES;
+
+    const allUnits = selectedBases.flatMap(generateUnitsForBase);
+
+    setGlobalObjects(prev => {
+      const staticObjs = prev.filter(o =>
+        ["missile", "drone", "artillery", "interceptor"].includes(o.type)
+      );
+
+      const next = [...staticObjs, ...allUnits];
+
+      if (JSON.stringify(next) === JSON.stringify(prev)) return prev;
+      return next;
     });
-  };
-
-  const selectedBases = focusMode && selectedBaseId
-    ? ALL_BASES.filter(b => b.id === selectedBaseId)
-    : ALL_BASES;
-
-  const allUnits = selectedBases.flatMap(generateUnitsForBase);
-
-  setGlobalObjects(prev => {
-    const staticObjs = prev.filter(o =>
-      ["missile", "drone", "artillery", "interceptor"].includes(o.type)
-    );
-
-    const next = [...staticObjs, ...allUnits];
-
-    // avoid state update if nothing changed
-    if (JSON.stringify(next) === JSON.stringify(prev)) return prev;
-    return next;
-  });
-}, [pixelPositions, konvaZoom, focusMode, selectedBaseId, customBases, ALL_BASES]);
-
+  }, [pixelPositions, konvaZoom, focusMode, selectedBaseId, customBases, ALL_BASES]);
 
   const VELOCITY_BY_TYPE = { missile: 0.05, drone: 0.02, artillery: 0.015 };
 
@@ -101,6 +116,7 @@ useEffect(() => {
       setGlobalObjects(prev => [...prev, {
         id: objData.id, type: objData.type,
         lat: objData.startLat, lng: objData.startLng,
+        currentLat: objData.startLat, currentLng: objData.startLng, // Add current coordinates for defense systems
         targetLat: objData.targetLat, targetLng: objData.targetLng,
         baseId: objData.baseId, speed, vx, vy, exploded: false
       }]);
@@ -135,7 +151,6 @@ useEffect(() => {
             continue;
           }
 
-          // 🔹 nearest base uses ALL_BASES
           let nearestBase = null;
           let minD = Infinity;
           for (const b of ALL_BASES) {
@@ -157,7 +172,17 @@ useEffect(() => {
           }
 
           const { vx, vy } = calculateVelocity(obj.lat, obj.lng, obj.targetLat, obj.targetLng, obj.speed * speedFactor);
-          next.push({ ...obj, lat: obj.lat + vy, lng: obj.lng + vx, vx, vy });
+          const newLat = obj.lat + vy;
+          const newLng = obj.lng + vx;
+          next.push({ 
+            ...obj, 
+            lat: newLat, 
+            lng: newLng, 
+            currentLat: newLat,  // Add currentLat for defense systems
+            currentLng: newLng,  // Add currentLng for defense systems
+            vx, 
+            vy 
+          });
         }
 
         if (handoffList.length > 0 && mapInstance) {
@@ -183,7 +208,6 @@ useEffect(() => {
         return next;
       });
 
-      // 🔹 Animate interceptors
       setActiveInterceptors(prev => prev.map(intc => {
         if (intc.exploded || intc.reached) return intc;
         const targetObj = globalObjectsRef.current.find(o => o.id === intc.targetId && !o.exploded);
@@ -202,7 +226,6 @@ useEffect(() => {
         }
         return { ...intc, vx, vy, lat: intc.lat + vy, lng: intc.lng + vx };
       }));
-
     }, 30);
 
     return () => clearInterval(interval);
@@ -231,11 +254,198 @@ useEffect(() => {
     }).filter(Boolean);
 
   const allUnitsForCanvas = [...scaledBaseUnits, ...projectObjects, ...interceptorsInPixels];
+  
+  // 🔹 Always include ALL base units for defense systems, regardless of zoom level
+  // This ensures defense functionality works even when units aren't visually rendered
+  const allUnitsForDefense = [
+    ...globalObjects.filter(o => !["missile","drone","artillery","interceptor"].includes(o.type)), 
+    ...globalObjects.filter(o => ["missile","drone","artillery"].includes(o.type) && !o.exploded), // Use original objects, not projected ones
+    ...interceptorsInPixels,
+    // Add actual base objects for DefenseSystemManager
+    ...ALL_BASES.map(base => ({
+      id: base.id,
+      type: "base",
+      lat: base.coords[0],
+      lng: base.coords[1],
+      name: base.name,
+      baseType: base.type
+    }))
+  ];
+  const isZoomedOut = konvaZoom < 13;
 
-  useCentralAI(allUnitsForCanvas, ()=>{}, signal=>socket.emit("unit-signal", signal), showMessageRef.current);
+  // 🔹 Create spawnInterceptor function for background defense
+  const spawnInterceptor = useCallback((launchData) => {
+    console.log(`[BackgroundDefense] spawnInterceptor called with:`, launchData);
+    if (!launchData) {
+      console.error("[BackgroundDefense] No launch data provided");
+      return;
+    }
+    const { launcherId, threatId, launcherLat, launcherLng, targetLat, targetLng, vx, vy } = launchData;
+    
+    // Find the launcher and target in globalObjects
+    const launcher = globalObjects.find(o => o.id === launcherId);
+    const target = globalObjects.find(o => o.id === threatId && !o.exploded);
+    
+    console.log(`[BackgroundDefense] Launcher found:`, !!launcher, "Target found:", !!target);
+    
+    if (!launcher) {
+      console.error("Launcher not found:", launcherId);
+      return;
+    }
+    if (!target) {
+      console.error("Target not found:", threatId);
+      return;
+    }
+
+    // Calculate velocity if not provided
+    const calculatedVelocity = vx && vy ? { vx, vy } : calculateVelocity(
+      launcherLat || launcher.lat, 
+      launcherLng || launcher.lng, 
+      targetLat || target.lat, 
+      targetLng || target.lng, 
+      0.08
+    );
+
+    const interceptorData = {
+      id: `interceptor-${Date.now()}-${Math.random()}`,
+      threatId,
+      type: "interceptor",
+      lat: launcherLat || launcher.lat,
+      lng: launcherLng || launcher.lng,
+      targetId: threatId,
+      speed: 0.05,
+      ...calculatedVelocity,
+      exploded: false,
+      reached: false
+    };
+
+    console.log(`[BackgroundDefense] Creating interceptor:`, interceptorData);
+
+    // Add interceptor to active interceptors
+    setActiveInterceptors(prev => {
+      const newInterceptors = [...prev, interceptorData];
+      console.log(`[BackgroundDefense] Total interceptors: ${newInterceptors.length}`);
+      return newInterceptors;
+    });
+
+    console.log(`[BackgroundDefense] 🚀 Successfully launched interceptor from ${launcherId} towards ${threatId}`);
+  }, [globalObjects, setActiveInterceptors]);
+
+  // 🔹 Debug: Log what objects are being passed to defense systems
+  useEffect(() => {
+    console.log(`[TerritoryMap] Defense objects at zoom ${konvaZoom}:`, {
+      total: allUnitsForDefense.length,
+      bases: allUnitsForDefense.filter(o => o.type === "base").length,
+      units: allUnitsForDefense.filter(o => !["missile","drone","artillery","interceptor","base"].includes(o.type)).length,
+      missiles: allUnitsForDefense.filter(o => o.type === "missile").length,
+      interceptors: allUnitsForDefense.filter(o => o.type === "interceptor").length
+    });
+  }, [allUnitsForDefense, konvaZoom]);
+
+  // 🔹 Independent Defense System - works regardless of visual rendering
+  const missilesForDefense = globalObjects.filter(o => o.type === "missile" && !o.exploded && !o.reached);
+  
+  // Debug: Log missiles being passed to independent defense
+  useEffect(() => {
+    console.log(`[TerritoryMap] Missiles for independent defense:`, {
+      total: missilesForDefense.length,
+      missiles: missilesForDefense.map(m => ({
+        id: m.id,
+        lat: m.lat,
+        lng: m.lng,
+        exploded: m.exploded,
+        reached: m.reached
+      }))
+    });
+  }, [missilesForDefense]);
+  
+  useIndependentDefense(missilesForDefense, setActiveInterceptors, konvaZoom);
+
+  // 🔹 Move interceptors and handle collisions
+  useEffect(() => {
+    const interval = setInterval(() => {
+      setActiveInterceptors(prev => {
+        return prev.map(interceptor => {
+          if (interceptor.exploded || interceptor.reached) return interceptor;
+
+          // Find target missile
+          const target = globalObjects.find(m => m.id === interceptor.targetId && !m.exploded);
+          if (!target) {
+            console.log(`[Interceptor] Target ${interceptor.targetId} not found, exploding interceptor`);
+            return { ...interceptor, exploded: true };
+          }
+
+          // Move interceptor towards target
+          const dx = target.lng - interceptor.lng;
+          const dy = target.lat - interceptor.lat;
+          const dist = Math.sqrt(dx * dx + dy * dy);
+
+          const speed = interceptor.speed || 0.05;
+          const vx = (dx / dist) * speed;
+          const vy = (dy / dist) * speed;
+
+          // Check collision
+          if (dist < 0.05) {
+            console.log(`[Interceptor] 💥 Collision! Interceptor ${interceptor.id} hit missile ${target.id}`);
+            
+            // Mark both as exploded
+            setGlobalObjects(prevObjs => 
+              prevObjs.map(obj => 
+                obj.id === target.id ? { ...obj, exploded: true } : obj
+              )
+            );
+            
+            return { ...interceptor, exploded: true, reached: true };
+          }
+
+          // Update interceptor position
+          return {
+            ...interceptor,
+            vx,
+            vy,
+            lat: interceptor.lat + vy,
+            lng: interceptor.lng + vx,
+          };
+        }).filter(interceptor => !interceptor.exploded); // Remove exploded interceptors
+      });
+    }, 30);
+
+    return () => clearInterval(interval);
+  }, [globalObjects, setActiveInterceptors]);
+
+  // 🔹 Central AI (only active when zoomed in - base units visible)
+  const isZoomedIn = konvaZoom >= 8; // Same threshold as base unit visibility
+  
+  // Debug: Log which defense system is active
+  useEffect(() => {
+    console.log(`[TerritoryMap] Defense system status at zoom ${konvaZoom}:`, {
+      isZoomedIn,
+      normalDefenseActive: isZoomedIn,
+      independentDefenseActive: !isZoomedIn,
+      baseUnitsVisible: isZoomedIn
+    });
+  }, [konvaZoom, isZoomedIn]);
+  
+  useCentralAI(isZoomedIn ? allUnitsForDefense : [], ()=>{}, signal=>socket.emit("unit-signal", signal), showMessageRef.current);
 
   return (
     <>
+      {/* Run background defense engines only when zoomed in (base units visible) */}
+      {isZoomedIn && ALL_BASES.map(base => (
+        <BackgroundDefenseEngine
+          key={base.id}
+          objects={allUnitsForDefense}
+          zoom={konvaZoom}
+          onLogsUpdate={onLogsUpdate}
+          showMessage={showMessageRef.current}
+          baseId={base.id}
+          active={isZoomedIn}
+          spawnInterceptor={spawnInterceptor}
+        />
+      ))}
+
+
+
       {mapInstance && ALL_BASES.map(base => (
         <Marker
           key={base.id}

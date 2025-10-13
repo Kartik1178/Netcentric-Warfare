@@ -145,14 +145,23 @@ function decideResponse(missile, units, missileId, unitLocks) {
 }
 
 function classifyThreat(missile, units) {
-  const missilePos = { x: missile.currentX, y: missile.currentY };
   let minDistance = Infinity;
 
   for (let unit of units.filter((u) => u.type === "radar")) {
-    if (unit.x != null && unit.y != null) {
-      const dist = getDistance(missilePos, { x: unit.x, y: unit.y });
-      if (dist < minDistance) minDistance = dist;
+    let dist;
+    
+    // Try pixel coordinates first
+    if (unit.x != null && unit.y != null && missile.currentX != null && missile.currentY != null) {
+      dist = getDistance({ x: missile.currentX, y: missile.currentY }, { x: unit.x, y: unit.y });
     }
+    // Fall back to lat/lng coordinates
+    else if (unit.lat != null && unit.lng != null && missile.currentLat != null && missile.currentLng != null) {
+      dist = getDistance({ lat: missile.currentLat, lng: missile.currentLng }, { lat: unit.lat, lng: unit.lng });
+    } else {
+      continue; // Skip if we don't have enough coordinate information
+    }
+    
+    if (dist < minDistance) minDistance = dist;
   }
 
   const speed = Math.sqrt((missile.vx ?? 0) ** 2 + (missile.vy ?? 0) ** 2);
